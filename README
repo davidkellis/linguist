@@ -1,0 +1,9 @@
+Linguist is a parsing toolkit for parsing context-free grammars (CFGs).
+
+Linguist currently implements the Earley parsing algorithm. Other parsing algorithms
+should be fairly easy to implement.
+
+Linguist is similar to the excellent Citrus library (https://github.com/mjijackson/citrus), except that Citrus
+is an implementation of a PEG (parsing expression grammar) parser instead of an Earley parser.
+
+Linguist doesn't build parse trees yet (that's next on my to do list), it is currently only a recognizer.
