@@ -68,6 +68,52 @@ module Linguist
     end
   end
 
+  class BNFGrammar
+    attr_accessor :productions, :start
+
+    def initialize
+      @productions = {}
+      @start = nil
+    end
+
+    def non_terminals
+      productions.keys
+    end
+
+    def alternatives(non_terminal)
+      productions[non_terminal] || []
+    end
+
+    # NOTE:
+    # In a BNF Grammar, "productions" is a hash of the form:
+    # { NT -> [[A, B, 'c'], [D, 'e'], ...] }
+    # In other words, each key/value pair is a non-terminal/array-of-alternatives pair, where the
+    # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
+    # containing only terminals (characters) and non-terminals (symbols).
+    def nullable_non_terminals
+      unless @nullable_non_terminals
+        non_terminals_directly_deriving_epsilon = non_terminals.select do |nt|
+          productions[nt].any? {|sequence| sequence.size == 1 && sequence.first == Pattern::EPSILON }
+        end
+        @nullable_non_terminals = Set.new(non_terminals_directly_deriving_epsilon)
+        begin
+          original_nullable_count = @nullable_non_terminals.size
+          
+          @nullable_non_terminals += non_terminals.select do |nt|
+            productions[nt].any? {|sequence| sequence_nullable?(sequence, @nullable_non_terminals) }
+          end
+        end until original_nullable_count == @nullable_non_terminals.size
+      end
+      @nullable_non_terminals
+    end
+    
+    private
+    
+    def sequence_nullable?(sequence, nullable_non_terminals)
+      sequence.all? {|token| nullable_non_terminals.include?(token) }
+    end
+  end
+
   # Grammar is a data structure that represents a context-free grammar (CFG).
   # From wikipedia:
   # Formally, a context-free grammar G is defined by the 4-tuple:
@@ -95,7 +141,7 @@ module Linguist
     end
     
     def to_bnf
-      bnf_grammar = Grammar.new
+      bnf_grammar = BNFGrammar.new
       bnf_grammar.start = start
       bnf_grammar.productions = productions.reduce({}) do |m,kv|
         non_terminal, pattern = kv
@@ -105,7 +151,7 @@ module Linguist
           when Grammar::Sequence
             [pattern.to_bnf(bnf_grammar)]
           else
-            [[pattern.to_bnf(bnf_grammar)]]
+            [seq(pattern).to_bnf(bnf_grammar)]
         end
         m
       end
@@ -118,6 +164,12 @@ module Linguist
     
     def non_terminals
       productions.keys
+    end
+    
+    # This returns a set of non-terminals that are nullable
+    # A non-terminal N is nullable if it can derive epsilon
+    def nullable_non_terminals
+      @nullable_non_terminals ||= non_terminals.select{|nt| productions[nt].nullable? }
     end
     
     def alternatives(non_terminal)
@@ -160,6 +212,10 @@ module Linguist
     def to_bnf(bnf_grammar)
       @pattern
     end
+    
+    def nullable?
+      false
+    end
   end
   
   class Grammar::Terminal
@@ -178,14 +234,6 @@ module Linguist
     end
   end
 
-  class Grammar::Epsilon
-    include Pattern
-    
-    def initialize
-      @pattern = EPSILON
-    end
-  end
-
   class Grammar::Dot
     include Pattern
     
@@ -194,6 +242,18 @@ module Linguist
     end
   end
   
+  class Grammar::Epsilon
+    include Pattern
+    
+    def initialize
+      @pattern = EPSILON
+    end
+    
+    def nullable?
+      true
+    end
+  end
+
   class Grammar::Sequence
     include Pattern
     
@@ -223,6 +283,10 @@ module Linguist
         end
       end.flatten
     end
+    
+    def nullable?
+      @sequence.all?{|pattern| pattern.nullable? }
+    end
   end
   
   class Grammar::Alternative
@@ -250,6 +314,10 @@ module Linguist
       # [ [pattern1, ...], [patternI, patternJ, ...], [patternN, ...] ]
       array_of_alternatives.reduce{|m,array| m.concat(array) }
     end
+    
+    def nullable?
+      @alternatives.any?{|pattern| pattern.nullable? }
+    end
   end
 
   class Grammar::Kleene
@@ -261,6 +329,10 @@ module Linguist
 
     def to_bnf(bnf_grammar, new_non_terminal)
       alt(seq(@pattern, new_non_terminal), epsilon).to_bnf(bnf_grammar)
+    end
+    
+    def nullable?
+      true
     end
   end
   
@@ -389,9 +461,6 @@ module Linguist
         
         new_predicted_items = predicted[position + 1]
       end until new_predicted_items == original_predicted_items
-      
-      # The sets active[p+1] and predicted[p+1] together form the new itemset[p+1].
-      # itemset[position + 1] = active[position + 1] + predicted[position + 1]
     end
     
     def predict_items(item_collection, position)
@@ -411,6 +480,50 @@ module Linguist
     end
     
     def parse_trees
+    end
+  end
+  
+  # This Earley parser supports epsilon productions (productions in which an epsilon 
+  # appears in one of the production's alternatives).
+  class EarleyEpsilonParser < EarleyParser
+    # This implements Aycock and Horspool's solution of modifying the predictor to handle epsilon productions.
+    # "The Predictor is modified as follows. 
+    # When presented with an item R -> ···•N··· it predicts all items of the 
+    #   form N -> •··· as usual, but if N is nullable it also predicts the item R -> ···N•···."
+    def predict_items(item_collection, position)
+      # predicted_non_terminals_and_items is a hash of the form:
+      # {predicted_non_terminal => [item1_that_predicts_the_non_terminal, item2_that_predicts_the_non_terminal, ...], ...}
+      predicted_non_terminals_and_items = item_collection.reduce({}) do |memo,item|
+        predicted_token = item.right_pattern.first
+        # if the predicted token is a non-terminal, ...
+        if predicted_token.is_a?(Symbol)
+          memo[predicted_token] ||= []
+          memo[predicted_token] << item
+        end
+        memo
+      end
+      
+      # build a list of non-terminals that are predicted by the items in item_collection. A non-terminal is predicted
+      # by an item if the token to the right of the DOT is a non-terminal.
+      predicted_non_terminals = predicted_non_terminals_and_items.keys
+      
+      # "For each such non-terminal N and for each rule for that non-terminal N -> P..., the Predictor adds an
+      #   item N -> •P...@p+1 to the set predicted[p+1]."
+      predicted_non_terminals.each do |predicted_token|
+        predicted[position + 1] += construct_initial_item_set(predicted_token, 
+                                                              grammar.alternatives(predicted_token), 
+                                                              position + 1)
+        # if N is nullable, we also predict the item R -> ···N•···."
+        if grammar.nullable_non_terminals.include?(predicted_token)
+          predicted_items = predicted_non_terminals_and_items[predicted_token].map do |predicting_item|
+            Item.new(predicting_item.non_terminal,
+                     predicting_item.left_pattern + [predicting_item.right_pattern.first],
+                     predicting_item.right_pattern[1...predicting_item.right_pattern.size],
+                     predicting_item.position)
+          end
+          predicted[position + 1] += predicted_items
+        end
+      end
     end
   end
 end
