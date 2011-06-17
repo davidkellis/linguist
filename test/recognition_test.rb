@@ -9,7 +9,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:s, alt(seq('a', :s), 'b'))
     end
     
-    parser = Linguist::EarleyParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
     assert parser.match?("aaaaaaaab")
   end
@@ -24,7 +24,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:b, 'b')
     }
     
-    parser = Linguist::EarleyParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
     assert parser.match?("abbbbbb")
   end
@@ -41,7 +41,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:b, 'b')
     }
     
-    parser = Linguist::EarleyParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
   
     assert parser.match?("abbbbbbbbbbbbb")
   end

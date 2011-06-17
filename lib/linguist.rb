@@ -1,9 +1,9 @@
 # encoding: UTF-8
 
-require 'strscan'
-require 'pathname'
 require 'set'
 require 'pp'
+require 'parsers/earley'
+require 'parsers/practical_earley'
 
 module Linguist
   VERSION = 1.0
@@ -93,36 +93,31 @@ module Linguist
     def nullable_non_terminals
       unless @nullable_non_terminals
         non_terminals_directly_deriving_epsilon = non_terminals.select do |nt|
-          productions[nt].any? {|sequence| sequence.size == 1 && sequence.first == Pattern::EPSILON }
+          productions[nt].any? {|sequence| sequence.empty? }
         end
         @nullable_non_terminals = Set.new(non_terminals_directly_deriving_epsilon)
         begin
           original_nullable_count = @nullable_non_terminals.size
           
           @nullable_non_terminals += non_terminals.select do |nt|
-            productions[nt].any? {|sequence| sequence_nullable?(sequence, @nullable_non_terminals) }
+            productions[nt].any? {|sequence| sequence.all? {|token| @nullable_non_terminals.include?(token) } }
           end
         end until original_nullable_count == @nullable_non_terminals.size
       end
       @nullable_non_terminals
     end
-    
-    private
-    
-    def sequence_nullable?(sequence, nullable_non_terminals)
-      sequence.all? {|token| nullable_non_terminals.include?(token) }
-    end
   end
 
   # Grammar is a data structure that represents a context-free grammar (CFG).
+  #
   # From wikipedia:
-  # Formally, a context-free grammar G is defined by the 4-tuple:
-  # G = (V, E, P, S)
-  # where
-  # V is a finite set of non-terminals.
-  # E is a finite set of terminals, disjoint from V.
-  # P is a finite set of productions.
-  # S is the start symbol representing the non-terminal from which the grammar derives sentences.
+  #   Formally, a context-free grammar G is defined by the 4-tuple:
+  #   G = (V, E, P, S)
+  #   where
+  #   V is a finite set of non-terminals.
+  #   E is a finite set of terminals, disjoint from V.
+  #   P is a finite set of productions.
+  #   S is the start symbol representing the non-terminal from which the grammar derives sentences.
   class Grammar
     include PatternBuilder
     
@@ -143,7 +138,7 @@ module Linguist
     def to_bnf
       bnf_grammar = BNFGrammar.new
       bnf_grammar.start = start
-      bnf_grammar.productions = productions.reduce({}) do |m,kv|
+      tmp_productions = productions.reduce({}) do |m,kv|
         non_terminal, pattern = kv
         m[non_terminal] = case pattern
           when Grammar::Alternative
@@ -155,6 +150,7 @@ module Linguist
         end
         m
       end
+      bnf_grammar.productions.merge!(tmp_productions)
       bnf_grammar
     end
     
@@ -197,8 +193,8 @@ module Linguist
   end
   
   module Pattern
-    EPSILON = 1
-    DOT = 2
+    EPSILON = :__epsilon__
+    DOT = Object.new
     
     include PatternBuilder
 
@@ -249,6 +245,10 @@ module Linguist
       @pattern = EPSILON
     end
     
+    def to_bnf(bnf_grammar)
+      seq().to_bnf(bnf_grammar)
+    end
+    
     def nullable?
       true
     end
@@ -262,10 +262,6 @@ module Linguist
     end
     
     def to_bnf(bnf_grammar)
-      flatten_sequence(bnf_grammar)
-    end
-    
-    def flatten_sequence(bnf_grammar)
       @sequence.map do |pattern|
         case pattern
         when Grammar::Alternative
@@ -335,196 +331,72 @@ module Linguist
       true
     end
   end
-  
-  class EarleyParser
-    # This represents an Earley Item.
-    # From the Parsing Techniques book:
-    # An Item is a production with a gap in its right-hand side.
-    # The first "half" (the left-hand portion) of the production's right-hand side is the portion of the pattern
-    # that has already been recognized.
-    # The last "half" (the right-hand portion) .
-    # An Earley Item is an Item with an indication of the position of the symbol at which the 
-    # recognition of the recognized part started.
-    # The Item E-->E•QF@3 would be represented using this structure as:
-    # Item.new(:E, [:E], [:Q, :F], 3)
-    Item = Struct.new(:non_terminal, :left_pattern, :right_pattern, :position)
-    
-    attr_reader :grammar
-    attr_reader :completed, :active, :predicted
-    
-    def initialize(bnf_grammar)
-      @grammar = bnf_grammar
-      
-      # these collections hold a set of items per token in the input stream
-      # they are covered in detail on page 207 of Parsing Techniques (2nd ed.)
-      @completed = []
-      @active = []
-      @predicted = []
-    end
-    
-    def match?(input)
-      recognize(input.chars)
-    end
-    
-    def parse(input)
-      recognize(input.chars)
-      parse_trees
-    end
-    
-    def itemset(position)
-      active[position] + predicted[position]
-    end
-    
-    private
-    
-    # alternatives is an array of pattern sequences, where each pattern sequence is an array of terminals and non-terminals.
-    def construct_initial_item_set(non_terminal, alternatives, position)
-      Set.new(alternatives.map {|pattern| Item.new(non_terminal, [], pattern, position) })
-    end
-    
-    def recognize(token_stream)
-      build_initial_itemset
+end
 
-      token_stream.each_with_index do |token, position|
-        scan(token, position, position + 1)
-        complete(position)
-        predict(position)
-      end
-      
-      # If the completed set after the last symbol in the input contains an item 
-      # S -> ...•@1, that is, an item spanning the entire input and reducing to the start symbol,
-      # we have found a parsing.
-      parse_success = (completed[token_stream.count] || []).any? do |item|
-        item.non_terminal == grammar.start &&
-        item.right_pattern.empty? &&
-        item.position == 0
-      end
-      parse_success
+# Derived from: http://stackoverflow.com/questions/773403/ruby-want-a-set-like-object-which-preserves-order/773931#773931
+class UniqueArray < Array
+  def initialize(*args)
+    if args.size == 1 and args[0].is_a? Array then
+      super(args[0].uniq)
+    else
+      super(*args)
     end
-    
-    def build_initial_itemset
-      active[0] = construct_initial_item_set(grammar.start, grammar.alternatives(grammar.start), 0)
-      predict(-1)
-    end
-    
-    # this runs the scanner
-    def scan(token, source_position, destination_position)
-      # these items represent items that contain •σ somewhere in the item's pattern (σ is the token; σ === token)
-      items_to_be_copied = itemset(source_position).select {|item| item.right_pattern.first == token }
-      
-      # In the copied items, the part before the dot was already recognized and now σ is recognized;
-      # consequently, the Scanner changes •σ into σ•
-      # σ === token
-      modified_items = items_to_be_copied.map do |item|
-        Item.new(item.non_terminal,
-                 item.left_pattern + [item.right_pattern.first],
-                 item.right_pattern[1...item.right_pattern.size],
-                 item.position) 
-      end
-      
-      # separate out the completed items and the active items from modified_items
-      reduce_items, active_items = modified_items.partition {|item| item.right_pattern.empty? }
-      
-      completed[destination_position] ||= Set.new
-      completed[destination_position] += reduce_items
-      
-      active[destination_position] ||= Set.new
-      active[destination_position] += active_items
-    end
-    
-    # this runs the completer
-    def complete(position)
-      # this is the closure of the scan/complete action
-      begin
-        reduce_items = completed[position + 1]
-        
-        # for each item of the form R -> ...•@m the Completer goes to itemset[m], and calls scan(R, m, position + 1)
-        reduce_items.each do |item|
-          scan(item.non_terminal, item.position, position + 1)
-        end
-        
-        new_reduce_items = completed[position + 1]
-      end until new_reduce_items == reduce_items
-    end
-    
-    # this runs the predictor
-    def predict(position)
-      predicted[position + 1] ||= Set.new
+    @set = Set.new(self)
+  end
 
-      predict_items(active[position + 1], position)
+  def insert(i, v)
+    unless @set.include?(v)
+      @set << v
+      super(i, v)
+    end
+  end
 
-      # this is the closure of the predict action
-      begin
-        original_predicted_items = predicted[position + 1]
-        
-        predict_items(original_predicted_items, position)
-        
-        new_predicted_items = predicted[position + 1]
-      end until new_predicted_items == original_predicted_items
+  def <<(v)
+    unless @set.include?(v)
+      @set << v
+      super(v)
     end
-    
-    def predict_items(item_collection, position)
-      # build a list of non-terminals that are predicted by the items in item_collection. A non-terminal is predicted
-      # by an item if the token to the right of the DOT is a non-terminal.
-      predicted_non_terminals = item_collection.map do |item|
-        predicted_token = item.right_pattern.first
-        predicted_token.is_a?(Symbol) ? predicted_token : nil
-      end.compact.uniq
-      # "For each such non-terminal N and for each rule for that non-terminal N -> P..., the Predictor adds an
-      #   item N -> •P...@p+1 to the set predicted[p+1]."
-      predicted_non_terminals.each do |predicted_token|
-        predicted[position + 1] += construct_initial_item_set(predicted_token, 
-                                                              grammar.alternatives(predicted_token), 
-                                                              position + 1)
-      end
+  end
+
+  def []=(*args)
+    # note: could just call super(*args) then uniq!, but this is faster
+
+    # there are three different versions of this call:
+    # 1. start, length, value
+    # 2. index, value
+    # 3. range, value
+    # We just need to get the value
+    v = case args.size
+      when 3 then args[2]
+      when 2 then args[1]
+      else nil
     end
-    
-    def parse_trees
+
+    if v.nil? or !@set.include?(v)
+      super(*args)
+      @set << v
     end
   end
   
-  # This Earley parser supports epsilon productions (productions in which an epsilon 
-  # appears in one of the production's alternatives).
-  class EarleyEpsilonParser < EarleyParser
-    # This implements Aycock and Horspool's solution of modifying the predictor to handle epsilon productions.
-    # "The Predictor is modified as follows. 
-    # When presented with an item R -> ···•N··· it predicts all items of the 
-    #   form N -> •··· as usual, but if N is nullable it also predicts the item R -> ···N•···."
-    def predict_items(item_collection, position)
-      # predicted_non_terminals_and_items is a hash of the form:
-      # {predicted_non_terminal => [item1_that_predicts_the_non_terminal, item2_that_predicts_the_non_terminal, ...], ...}
-      predicted_non_terminals_and_items = item_collection.reduce({}) do |memo,item|
-        predicted_token = item.right_pattern.first
-        # if the predicted token is a non-terminal, ...
-        if predicted_token.is_a?(Symbol)
-          memo[predicted_token] ||= []
-          memo[predicted_token] << item
-        end
-        memo
-      end
-      
-      # build a list of non-terminals that are predicted by the items in item_collection. A non-terminal is predicted
-      # by an item if the token to the right of the DOT is a non-terminal.
-      predicted_non_terminals = predicted_non_terminals_and_items.keys
-      
-      # "For each such non-terminal N and for each rule for that non-terminal N -> P..., the Predictor adds an
-      #   item N -> •P...@p+1 to the set predicted[p+1]."
-      predicted_non_terminals.each do |predicted_token|
-        predicted[position + 1] += construct_initial_item_set(predicted_token, 
-                                                              grammar.alternatives(predicted_token), 
-                                                              position + 1)
-        # if N is nullable, we also predict the item R -> ···N•···."
-        if grammar.nullable_non_terminals.include?(predicted_token)
-          predicted_items = predicted_non_terminals_and_items[predicted_token].map do |predicting_item|
-            Item.new(predicting_item.non_terminal,
-                     predicting_item.left_pattern + [predicting_item.right_pattern.first],
-                     predicting_item.right_pattern[1...predicting_item.right_pattern.size],
-                     predicting_item.position)
-          end
-          predicted[position + 1] += predicted_items
-        end
-      end
-    end
+  def clear
+    @set.clear
+    super
+  end
+  
+  def delete(obj)
+    @set.delete(obj)
+    super
+  end
+  
+  def delete_at(i)
+    obj = super
+    @set.delete(obj)
+    obj
+  end
+  
+  def +(other_array)
+    other_array.each{|obj| self << obj }
+    self
   end
 end
 
