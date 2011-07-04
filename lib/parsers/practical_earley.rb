@@ -4,28 +4,37 @@ module Linguist
   # PracticalEarleyParser implements the Earley algorithm as described by Aycock and Horspool
   # in "Practical Earley Parsing" (http://webhome.cs.uvic.ca/~nigelh/Publications/PracticalEarleyParsing.pdf)
   class PracticalEarleyParser
+    class Tree < Linguist::Tree
+      attr_accessor :unused_completed
+      def initialize(root, unused_completed)
+        super(root)
+        @unused_completed = unused_completed
+      end
+    end
+    
     attr_reader :grammar
     attr_reader :list
   
     def initialize(bnf_grammar)
       @grammar = bnf_grammar
     
-      @list = []
+      reset
     end
   
     def reset
+      @input_length = 0
       @list = []
     end
   
     def match?(input)
       reset
-      recognize(input.chars)
+      token_stream = input.chars
+      @input_length = token_stream.count
+      recognize(token_stream)
     end
   
     def parse(input)
-      reset
-      recognize(input.chars)
-      parse_trees
+      match? ? parse_trees : []
     end
   
     # @param alternatives is an array of pattern sequences, where each pattern sequence is 
@@ -134,6 +143,115 @@ module Linguist
         end
       end
     end
+    
+    # examine every item in every item-set within list, and filter out all non-complete items.
+    # note: a complete item is an item of the form [A → ...•, j] (i.e. the dot is at the end of the pattern)
+    def completed_list
+      list.map{|item_set| item_set.select{|item| item.right_pattern.empty? } }
+    end
+    
+    # returns an array of parse trees that can be built given a grammar and input
+    def parse_trees
+      trees = build_parse_trees(completed_list)
+      trees.map(&:to_sexp)
+    end
+    
+    # build_parse_trees takes a list of completed items that occur at each position of the input,
+    # and returns a list of parse trees - a parse forrest
+    def build_parse_trees(completed_items)
+      # build the root nodes of all the initially obvious parse trees
+      roots = parse_tree_root_nodes(completed_items)
+
+      # construct the initial set of trees, each containing only the root node of the tree
+      trees = Set.new(construct_trees_from_roots(roots, completed_items))
+
+      completion_queue = roots
+      until completion_queue.empty?
+        node = completion_queue.shift
+        subtree_roots = build_subtrees_with_root(node)
+        trees += subtree_roots.map(&:tree)
+        new_children = subtree_roots.map(&:children).flatten
+        completion_queue.concat(new_children) unless new_children.empty?
+      end
+
+      trees
+    end
+
+    # Search for items of the form [S → ...•, 0] in the item list after the last input token (i.e. at position @input_length).
+    # This selects the items that represent the root node of a parse tree (in each possible tree, the grammar's
+    #   start symbol derives the entire input string), and constructs Node objects out of them
+    # Returns Node objects that are complete except that they are missing a tree attribute
+    def parse_tree_root_nodes(completed_items)
+      root_items = completed_items[@input_length].select{|item| item.non_terminal == grammar.start && item.position == 0 }
+      root_items.map {|item| Node.new(item.non_terminal, nil, item, 0, @input_length - 1) }
+    end
+
+    def construct_trees_from_roots(root_nodes, completed_items)
+      root_nodes.map do |root_node|
+        tree = Tree.new(root_node, completed_items - [root_node.item])
+        root_node.tree = tree     # complete the root node by setting its tree attribute
+        tree
+      end
+    end
+
+    def clone_nodes(nodes)
+      row.map(&:clone)
+    end
+
+    # This takes a given parent_node and returns all the sub-trees (containing 1 level of children) that
+    # are derived from it. Every sub-tree is rooted at the parent_node (or a clone of it). The sub-trees that
+    # are rooted at a clone of parent_node are also part of a clone of the tree containing parent_node.
+    # In other words, every sub-tree that is returned is a part of a different tree entirely.
+    # parent_node is a complete node (it has all its attributes set)
+    def build_subtrees_with_root(parent_node)
+      pattern = parent_node.item.left_pattern
+      parent_node.children = pattern.map {|term| Node.new(term, parent_node, nil, nil, nil, parent_node.tree) }
+
+      subtree_roots = [parent_node]
+      i = 0
+      while i < subtree_roots.length
+        subtree_root = subtree_roots[i]
+
+        end_index = subtree_root.end_index
+        subtree_root.children.reverse.each do |child_node|
+          # select the items in list[end_index + 1] that have a non-terminal equal to the child node's non-terminal
+          child_node_completed_items = subtree_root.tree.unused_completed[end_index + 1].select do |item|
+            item.non_terminal == child_node.value
+          end
+
+          # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
+          # has more than one parse tree, and this is where a tree diverges into two or more trees.
+          # So, we need to clone the part of the tree that is the same accross both trees, and then construct
+          # the remainder of each tree independently so that we capture all possible parse trees.
+
+          # iterate over all the completed items except the first (0th) one, creating a duplicate of the partial tree
+          # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
+          # This is how we wind up with a parse forrest, instead of a single parse tree.
+          child_node_completed_items[1..-1].each do |item|
+            new_tree = child_node.tree.clone
+            new_node = new_tree.node_at(child_node.path)
+            # new_node.tree = new_tree
+
+            finish_node(new_node, item, end_index)
+
+            subtree_roots << new_node.parent
+          end
+
+          finish_node(child_node, child_node_completed_items[0], end_index)
+
+          end_index = child_node.start_index - 1
+        end
+      end
+
+      subtree_roots
+    end
+
+    def finish_node(node, item, end_index)
+      node.tree.unused_completed -= [item]
+      node.item = item
+      node.start_index = item.position
+      node.end_index = end_index
+    end
   end
 
   class PracticalEarleyEpsilonParser < PracticalEarleyParser
@@ -158,6 +276,33 @@ module Linguist
                                      item.position)
         end
       end
+    end
+  end
+  
+  class PracticalEarleyParser::Tree
+    attr_accessor :root
+    attr_accessor :unused_completed
+    def initialize(root, unused_completed = nil)
+      @root = root
+      @unused_completed = unused_completed
+    end
+  end
+
+  class PracticalEarleyParser::Node < Linguist::Node
+    attr_accessor :item, :start_index, :end_index
+    attr_accessor :parent, :tree
+
+    def initialize(node_value, parent = nil, item = nil, start_index = nil, end_index = nil, tree = nil)
+      super(node_value)
+      @parent = parent
+      @item = item
+      @start_index = start_index
+      @end_index = end_index
+      @tree = tree
+    end
+
+    def clone
+      self.class.new(value, parent, item, start_index, end_index, tree)
     end
   end
 end
