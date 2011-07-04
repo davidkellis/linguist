@@ -157,7 +157,7 @@ module Linguist
     end
     
     # build_parse_trees takes a list of completed items that occur at each position of the input,
-    # and returns a list of parse trees - a parse forrest
+    # and returns a list of parse trees - a parse forest
     def build_parse_trees(completed_items)
       # build the root nodes of all the initially obvious parse trees
       roots = parse_tree_root_nodes(completed_items)
@@ -194,10 +194,6 @@ module Linguist
       end
     end
 
-    def clone_nodes(nodes)
-      row.map(&:clone)
-    end
-
     # This takes a given parent_node and returns all the sub-trees (containing 1 level of children) that
     # are derived from it. Every sub-tree is rooted at the parent_node (or a clone of it). The sub-trees that
     # are rooted at a clone of parent_node are also part of a clone of the tree containing parent_node.
@@ -214,30 +210,33 @@ module Linguist
 
         end_index = subtree_root.end_index
         subtree_root.children.reverse.each do |child_node|
-          # select the items in list[end_index + 1] that have a non-terminal equal to the child node's non-terminal
-          child_node_completed_items = subtree_root.tree.unused_completed[end_index + 1].select do |item|
-            item.non_terminal == child_node.value
+
+          unless child_node.complete?
+            # 1. grab the item (or items) that should be associated with this child node
+            # select the items in list[end_index + 1] that have a non-terminal equal to the child node's non-terminal
+            child_node_completed_items = subtree_root.tree.unused_completed[end_index + 1].select do |item|
+              item.non_terminal == child_node.value
+            end
+
+            # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
+            # has more than one parse tree, and this is where a tree diverges into two or more trees.
+            # So, we need to clone the part of the tree that is the same accross both trees, and then construct
+            # the remainder of each tree independently so that we capture all possible parse trees.
+
+            # iterate over all the completed items except the first (0th) one, creating a duplicate of the partial tree
+            # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
+            # This is how we wind up with a parse forest, instead of a single parse tree.
+            child_node_completed_items[1..-1].each do |item|
+              new_tree = child_node.tree.clone
+              new_node = new_tree.node_at(child_node.path)
+
+              finish_node(new_node, item, end_index)
+
+              subtree_roots << new_node.parent
+            end
+
+            finish_node(child_node, child_node_completed_items[0], end_index) if child_node_completed_items[0]
           end
-
-          # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
-          # has more than one parse tree, and this is where a tree diverges into two or more trees.
-          # So, we need to clone the part of the tree that is the same accross both trees, and then construct
-          # the remainder of each tree independently so that we capture all possible parse trees.
-
-          # iterate over all the completed items except the first (0th) one, creating a duplicate of the partial tree
-          # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
-          # This is how we wind up with a parse forrest, instead of a single parse tree.
-          child_node_completed_items[1..-1].each do |item|
-            new_tree = child_node.tree.clone
-            new_node = new_tree.node_at(child_node.path)
-            # new_node.tree = new_tree
-
-            finish_node(new_node, item, end_index)
-
-            subtree_roots << new_node.parent
-          end
-
-          finish_node(child_node, child_node_completed_items[0], end_index)
 
           end_index = child_node.start_index - 1
         end
@@ -286,6 +285,51 @@ module Linguist
       @root = root
       @unused_completed = unused_completed
     end
+
+    def clone
+      new_tree = self.class.new(nil, unused_completed.clone)
+      new_root = root.deep_clone {|node| node.tree = new_tree }
+      new_tree.root = new_root
+
+      new_tree
+    end
+
+    # node_path is an array of index positions, that together, point to a specific node in the tree
+    # 
+    # Example:
+    # in the tree:
+    #   (a
+    #     (b
+    #       c)
+    #     (d
+    #       e
+    #       f)
+    #     (g
+    #       (h
+    #         i
+    #         j)
+    #       k
+    #       l
+    #       m))
+    # [0] points to node "a"
+    # [0, 2] points to node "g"
+    # [0, 1, 0] points to node "e"
+    # [0, 2, 3] points to node "m"
+    # [0, 2, 0, 1] points to node "j"
+    def node_at(node_path)
+      unless node_path.empty?
+        children = [root]
+        node = nil
+
+        node_path.each do |child_index|
+          raise "The node path #{node_path.join(',')} does not point to a node" if child_index >= children.length
+          node = children[child_index]
+          children = node.children
+        end
+
+        node
+      end
+    end
   end
 
   class PracticalEarleyParser::Node < Linguist::Node
@@ -303,6 +347,35 @@ module Linguist
 
     def clone
       self.class.new(value, parent, item, start_index, end_index, tree)
+    end
+
+    def deep_clone
+      new_parent = clone
+      new_children = children.map do |child|
+        new_child = child.deep_clone
+        new_child.parent = new_parent
+        new_child
+      end
+      new_parent.children = new_children
+      yield(new_parent) if block_given?
+      new_parent
+    end
+
+    def clone_with_parent(new_parent = nil)
+      self.class.new(value, new_parent, item, start_index, end_index, new_parent.tree)
+    end
+
+    def complete?
+      item && start_index && end_index && tree
+    end
+
+    def path
+      if parent
+        child_index = parent.children.find_index(self)
+        parent.path + [child_index]
+      else
+        [0]
+      end
     end
   end
 end
