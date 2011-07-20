@@ -2,13 +2,21 @@
 module Linguist
   class Node
     attr_accessor :value
-    attr_reader :children
+    attr_accessor :children
     
     def initialize(node_value)
       @value = node_value
       @children = []
     end
     
+    def non_terminal?
+      @value.is_a? Symbol
+    end
+
+    def terminal?
+      !non_terminal?
+    end
+
     def hash
       Digest::SHA1.hexdigest("#{value.hash.to_s}[#{children.map(&:hash).join(',')}]").hash
     end

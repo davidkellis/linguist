@@ -4,14 +4,6 @@ module Linguist
   # PracticalEarleyParser implements the Earley algorithm as described by Aycock and Horspool
   # in "Practical Earley Parsing" (http://webhome.cs.uvic.ca/~nigelh/Publications/PracticalEarleyParsing.pdf)
   class PracticalEarleyParser
-    class Tree < Linguist::Tree
-      attr_accessor :unused_completed
-      def initialize(root, unused_completed)
-        super(root)
-        @unused_completed = unused_completed
-      end
-    end
-    
     attr_reader :grammar
     attr_reader :list
   
@@ -168,10 +160,13 @@ module Linguist
       completion_queue = roots
       until completion_queue.empty?
         node = completion_queue.shift
+        puts "*" * 80
         subtree_roots = build_subtrees_with_root(node)
+        puts "subtree roots:"
+        puts subtree_roots.join("\n")
         trees += subtree_roots.map(&:tree)
         new_children = subtree_roots.map(&:children).flatten
-        completion_queue.concat(new_children) unless new_children.empty?
+        completion_queue.concat(new_children)
       end
 
       trees
@@ -200,55 +195,84 @@ module Linguist
     # In other words, every sub-tree that is returned is a part of a different tree entirely.
     # parent_node is a complete node (it has all its attributes set)
     def build_subtrees_with_root(parent_node)
-      pattern = parent_node.item.left_pattern
-      parent_node.children = pattern.map {|term| Node.new(term, parent_node, nil, nil, nil, parent_node.tree) }
-
+      puts "build_subtrees_with_root(#{parent_node.inspect})"
       subtree_roots = [parent_node]
-      i = 0
-      while i < subtree_roots.length
-        subtree_root = subtree_roots[i]
 
-        end_index = subtree_root.end_index
-        subtree_root.children.reverse.each do |child_node|
+      if parent_node.non_terminal?
+        pattern = parent_node.item.left_pattern
+        puts "parent node pattern: #{pattern.inspect}"
+        parent_node.children = pattern.map {|term| Node.new(term, parent_node, nil, nil, nil, parent_node.tree) }
 
-          unless child_node.complete?
-            # 1. grab the item (or items) that should be associated with this child node
-            # select the items in list[end_index + 1] that have a non-terminal equal to the child node's non-terminal
-            child_node_completed_items = subtree_root.tree.unused_completed[end_index + 1].select do |item|
-              item.non_terminal == child_node.value
-            end
+        i = 0
+        while i < subtree_roots.length
+          subtree_root = subtree_roots[i]
 
-            # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
-            # has more than one parse tree, and this is where a tree diverges into two or more trees.
-            # So, we need to clone the part of the tree that is the same accross both trees, and then construct
-            # the remainder of each tree independently so that we capture all possible parse trees.
+          end_index = subtree_root.end_index
+          subtree_root.children.reverse.each do |child_node|
+            complete_child_node(child_node, subtree_root, end_index, subtree_roots)
 
-            # iterate over all the completed items except the first (0th) one, creating a duplicate of the partial tree
-            # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
-            # This is how we wind up with a parse forest, instead of a single parse tree.
-            child_node_completed_items[1..-1].each do |item|
-              new_tree = child_node.tree.clone
-              new_node = new_tree.node_at(child_node.path)
-
-              finish_node(new_node, item, end_index)
-
-              subtree_roots << new_node.parent
-            end
-
-            finish_node(child_node, child_node_completed_items[0], end_index) if child_node_completed_items[0]
+            end_index = child_node.start_index - 1
           end
 
-          end_index = child_node.start_index - 1
+          i += 1
         end
       end
 
       subtree_roots
     end
 
-    def finish_node(node, item, end_index)
+    def complete_child_node(child_node, subtree_root, end_index, subtree_roots)
+      puts "complete_child_node(#{child_node}, #{subtree_root}, #{end_index}, #{subtree_roots})"
+      unless child_node.complete?
+        if child_node.non_terminal?
+          # 1. grab the item (or items) that should be associated with this child node
+          # select the items in list[end_index + 1] that have a non-terminal equal to the child node's non-terminal
+          child_node_completed_items = subtree_root.tree.unused_completed[end_index + 1].select do |item|
+            item.non_terminal == child_node.value
+          end
+
+          puts "child_node_completed_items = #{child_node_completed_items.inspect}"
+
+          # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
+          # has more than one parse tree, and this is where a tree diverges into two or more trees.
+          # So, we need to clone the part of the tree that is the same accross both trees, and then construct
+          # the remainder of each tree independently so that we capture all possible parse trees.
+
+          # iterate over all the completed items except the first (0th) one, creating a duplicate of the partial tree
+          # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
+          # This is how we wind up with a parse forest, instead of a single parse tree.
+          if child_node_completed_items.length > 1
+            child_node_completed_items[1..-1].each do |item|
+              # puts "child_node.tree = #{child_node.tree.inspect}"
+              # puts "child_node = #{child_node.inspect}"
+              # puts "child_node.path = #{child_node.path.inspect}"
+              new_tree = child_node.tree.clone
+              # puts "new_tree = #{new_tree.inspect}"
+              new_node = new_tree.node_at(child_node.path)
+
+              finish_non_terminal_node(new_node, item, end_index)
+
+              puts "adding to subtree_roots: #{new_node.parent.inspect}"
+              subtree_roots << new_node.parent
+            end
+          end
+
+          finish_non_terminal_node(child_node, child_node_completed_items[0], end_index) if child_node_completed_items[0]
+        else
+          finish_terminal_node(child_node, end_index)
+        end
+      end
+    end
+
+    def finish_non_terminal_node(node, item, end_index)
       node.tree.unused_completed -= [item]
       node.item = item
       node.start_index = item.position
+      node.end_index = end_index
+    end
+
+    def finish_terminal_node(node, end_index)
+      node.start_index = end_index
       node.end_index = end_index
     end
   end
@@ -281,9 +305,14 @@ module Linguist
   class PracticalEarleyParser::Tree
     attr_accessor :root
     attr_accessor :unused_completed
+
     def initialize(root, unused_completed = nil)
       @root = root
       @unused_completed = unused_completed
+    end
+
+    def to_s
+      root.to_s
     end
 
     def clone
@@ -330,6 +359,10 @@ module Linguist
         node
       end
     end
+
+    def to_sexp
+      root.to_sexp
+    end
   end
 
   class PracticalEarleyParser::Node < Linguist::Node
@@ -349,16 +382,16 @@ module Linguist
       self.class.new(value, parent, item, start_index, end_index, tree)
     end
 
-    def deep_clone
-      new_parent = clone
+    def deep_clone(&blk)
+      new_self = clone
       new_children = children.map do |child|
-        new_child = child.deep_clone
-        new_child.parent = new_parent
+        new_child = child.deep_clone(&blk)
+        new_child.parent = new_self
         new_child
       end
-      new_parent.children = new_children
-      yield(new_parent) if block_given?
-      new_parent
+      new_self.children = new_children
+      yield(new_self) if block_given?
+      new_self
     end
 
     def clone_with_parent(new_parent = nil)
@@ -375,6 +408,14 @@ module Linguist
         parent.path + [child_index]
       else
         [0]
+      end
+    end
+
+    def to_sexp
+      if children.empty?
+        value
+      else
+        [value] + children.map(&:to_sexp)
       end
     end
   end
