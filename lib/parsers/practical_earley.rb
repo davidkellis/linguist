@@ -144,6 +144,8 @@ module Linguist
     
     # returns an array of parse trees that can be built given a grammar and input
     def parse_trees
+      # pp "completed items:"
+      # pp completed_list
       trees = build_parse_trees(completed_list)
       trees.map(&:to_sexp)
     end
@@ -153,18 +155,20 @@ module Linguist
     def build_parse_trees(completed_items)
       # build the root nodes of all the initially obvious parse trees
       roots = parse_tree_root_nodes(completed_items)
+      # puts "roots = #{roots.inspect}"
 
       # construct the initial set of trees, each containing only the root node of the tree
       trees = Set.new(construct_trees_from_roots(roots, completed_items))
+      # puts "trees = #{trees.first.unused_completed.inspect}"
 
       completion_queue = roots
       until completion_queue.empty?
         node = completion_queue.shift
-        puts "*" * 80
-        subtree_roots = build_subtrees_with_root(node)
-        puts "subtree roots:"
-        puts subtree_roots.join("\n")
-        trees += subtree_roots.map(&:tree)
+        # puts "*" * 80
+        subtree_roots, trees = build_subtrees_with_root(node, trees)
+        # puts "subtree roots:"
+        # puts subtree_roots.join("\n")
+        # trees += subtree_roots.map(&:tree)
         new_children = subtree_roots.map(&:children).flatten
         completion_queue.concat(new_children)
       end
@@ -183,7 +187,9 @@ module Linguist
 
     def construct_trees_from_roots(root_nodes, completed_items)
       root_nodes.map do |root_node|
-        tree = Tree.new(root_node, completed_items - [root_node.item])
+        unused_completed = completed_items.clone
+        unused_completed[root_node.end_index + 1] -= [root_node.item]
+        tree = Tree.new(root_node, unused_completed)
         root_node.tree = tree     # complete the root node by setting its tree attribute
         tree
       end
@@ -194,18 +200,19 @@ module Linguist
     # are rooted at a clone of parent_node are also part of a clone of the tree containing parent_node.
     # In other words, every sub-tree that is returned is a part of a different tree entirely.
     # parent_node is a complete node (it has all its attributes set)
-    def build_subtrees_with_root(parent_node)
-      puts "build_subtrees_with_root(#{parent_node.inspect})"
+    def build_subtrees_with_root(parent_node, trees)
+      # puts "build_subtrees_with_root(#{parent_node.inspect})"
       subtree_roots = [parent_node]
 
       if parent_node.non_terminal?
         pattern = parent_node.item.left_pattern
-        puts "parent node pattern: #{pattern.inspect}"
+        # puts "parent node pattern: #{pattern.inspect}"
         parent_node.children = pattern.map {|term| Node.new(term, parent_node, nil, nil, nil, parent_node.tree) }
 
         i = 0
         while i < subtree_roots.length
           subtree_root = subtree_roots[i]
+          # puts "subtree_roots[#{i}] = #{subtree_root.inspect}"
 
           end_index = subtree_root.end_index
           subtree_root.children.reverse.each do |child_node|
@@ -214,15 +221,28 @@ module Linguist
             end_index = child_node.start_index - 1
           end
 
+          # if the subtree's leftmost child node doesn't start at the same index as the parent's start index
+          # then the parse tree that the subtree is a part of is an invalid parse tree
+          if subtree_root.children.first.start_index != parent_node.start_index
+            # remove the parse tree from the set of valid parse trees
+            trees -= [subtree_root.tree]
+
+            # mark the parse tree as invalid because it is invalid
+            subtree_root.tree.invalid!
+          else
+            # subtree is valid, so add it to the trees
+            trees += [subtree_root.tree]
+          end
+
           i += 1
         end
       end
 
-      subtree_roots
+      [subtree_roots.select{|root_node| root_node.tree.valid? }, trees]
     end
 
     def complete_child_node(child_node, subtree_root, end_index, subtree_roots)
-      puts "complete_child_node(#{child_node}, #{subtree_root}, #{end_index}, #{subtree_roots})"
+      # puts "complete_child_node(#{child_node}, #{subtree_root}, #{end_index}, #{subtree_roots})"
       unless child_node.complete?
         if child_node.non_terminal?
           # 1. grab the item (or items) that should be associated with this child node
@@ -231,7 +251,7 @@ module Linguist
             item.non_terminal == child_node.value
           end
 
-          puts "child_node_completed_items = #{child_node_completed_items.inspect}"
+          # puts "child_node_completed_items = #{child_node_completed_items.inspect}"
 
           # Note: if child_node_completed_items contains more than 1 item, then we are dealing with a sentence that
           # has more than one parse tree, and this is where a tree diverges into two or more trees.
@@ -243,16 +263,12 @@ module Linguist
           # This is how we wind up with a parse forest, instead of a single parse tree.
           if child_node_completed_items.length > 1
             child_node_completed_items[1..-1].each do |item|
-              # puts "child_node.tree = #{child_node.tree.inspect}"
-              # puts "child_node = #{child_node.inspect}"
-              # puts "child_node.path = #{child_node.path.inspect}"
               new_tree = child_node.tree.clone
-              # puts "new_tree = #{new_tree.inspect}"
               new_node = new_tree.node_at(child_node.path)
 
               finish_non_terminal_node(new_node, item, end_index)
 
-              puts "adding to subtree_roots: #{new_node.parent.inspect}"
+              # puts "adding to subtree_roots: #{new_node.parent.inspect}"
               subtree_roots << new_node.parent
             end
           end
@@ -265,7 +281,7 @@ module Linguist
     end
 
     def finish_non_terminal_node(node, item, end_index)
-      node.tree.unused_completed -= [item]
+      node.tree.unused_completed[end_index + 1] -= [item]
       node.item = item
       node.start_index = item.position
       node.end_index = end_index
@@ -309,6 +325,15 @@ module Linguist
     def initialize(root, unused_completed = nil)
       @root = root
       @unused_completed = unused_completed
+      @valid = true
+    end
+
+    def valid?
+      @valid
+    end
+
+    def invalid!
+      @valid = false
     end
 
     def to_s

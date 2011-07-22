@@ -13,6 +13,6 @@ class AmbiguityTest < Test::Unit::TestCase
     
     assert parser.match?("aaa")
     
-    pp parser.completed_list
+    # pp parser.completed_list
   end
 end
