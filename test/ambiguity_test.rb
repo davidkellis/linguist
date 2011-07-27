@@ -11,8 +11,9 @@ class AmbiguityTest < Test::Unit::TestCase
     
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
-    assert parser.match?("aaa")
-    
-    # pp parser.completed_list
+    assert parser.match?("aaaa")
+    pp parser.parse_trees
+    # parser.parse_trees.each{|tree| puts tree.to_sexp }
+    # assert_equal 5, parser.parse_trees.length
   end
 end

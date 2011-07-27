@@ -1,3 +1,4 @@
+# encoding: UTF-8
 
 module Linguist
   # This represents an Earley Item.
@@ -11,6 +12,11 @@ module Linguist
   #   The Item E-->E•QF@3 would be represented using this structure as:
   #   Item.new(:E, [:E], [:Q, :F], 3)
   Item = Struct.new(:non_terminal, :left_pattern, :right_pattern, :position)
+  class Item
+    def to_s
+      "[#{non_terminal} -> #{left_pattern.join(" ")}•#{right_pattern.join(" ")}, #{position}]"
+    end
+  end
 
   class EarleyParser
     attr_reader :grammar

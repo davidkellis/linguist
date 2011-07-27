@@ -1,3 +1,4 @@
+require 'digest'
 
 module Linguist
   class Node
@@ -28,7 +29,7 @@ module Linguist
     end
     
     def to_s
-      "(#{value.to_s}, #{children.map(&:to_s).join(',')})"
+      "(#{children.map(&:to_s).unshift(value.to_s).join(',')})"
     end
     
     # adds another child to the far right-hand-side of the array of existing children
