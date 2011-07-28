@@ -145,13 +145,11 @@ module Linguist
     # DONE
     # returns an array of parse trees that can be built given a grammar and input
     def parse_trees
-      pp "completed items:"
-      puts completed_list.map.with_index{|list,i| "#{i}\n#{list.join("\n")}" }
+      # pp "completed items:"
+      # puts completed_list.map.with_index{|list,i| "#{i}\n#{list.join("\n")}" }
 
       trees = build_parse_trees(completed_list)
-
-      pp trees
-
+      # pp trees
       trees.map(&:to_sexp)
     end
     
@@ -164,7 +162,7 @@ module Linguist
       # puts "roots = #{roots.inspect}"
 
       # construct the initial set of trees, each containing only the root node of the tree
-      initial_trees = Set.new(construct_initial_trees_from_roots(roots, completed_items))
+      initial_trees = construct_initial_trees_from_roots(roots, completed_items)
       # puts "trees = #{trees.first.unused_completed.inspect}"
 
       build_all_trees(initial_trees)
@@ -185,7 +183,7 @@ module Linguist
       root_nodes.map do |root_node|
         unused_completed = completed_items.clone
         unused_completed[root_node.end_index + 1] -= [root_node.item]
-        tree = Tree.new(root_node, unused_completed)
+        tree = Tree.new(root_node, unused_completed, [root_node])
         root_node.tree = tree     # complete the root node by setting its tree attribute
         tree
       end
@@ -194,13 +192,28 @@ module Linguist
     # DONE
     # takes a UniqueArray of unfinished trees and returns an array of all parse trees
     def build_all_trees(trees)
-      node_queue = trees.map(&:root)
-      until node_queue.empty?
-        node = node_queue.shift
-        new_nodes, trees = build_child_nodes_and_clones(node, trees)
-        node_queue.concat(new_nodes)
+      complete_trees = Set.new
+      incomplete_trees = trees
+      until incomplete_trees.empty?
+        tree = incomplete_trees.shift
+        completed_tree, incomplete_trees = complete_tree(tree, incomplete_trees)
+        complete_trees << completed_tree if completed_tree
       end
-      trees.select(&:valid?)
+      complete_trees
+    end
+
+    # returns an array of the form [complete_tree, divergent_trees] s.t. complete_tree
+    # is a valid complete parse tree, and divergent_trees are incomplete trees that still
+    # have incomplete nodes. If the given tree cannot be completed (i.e. it is found to be invalid), then 
+    # complete_tree will be nil.
+    def complete_tree(tree, incomplete_trees)
+      while tree.valid? && !tree.incomplete_nodes.empty?
+        node = tree.incomplete_nodes.shift
+        new_nodes, incomplete_trees = build_child_nodes_and_clones(node, incomplete_trees)
+        tree.incomplete_nodes.concat(new_nodes)
+      end
+      completed_tree = tree.valid? ? tree : nil
+      [completed_tree, incomplete_trees]
     end
 
     # DONE
@@ -212,10 +225,9 @@ module Linguist
     #
     # Returns an array of the form [new_nodes, trees] where all the new nodes are valid and complete
     # and the trees are valid.
-    def build_child_nodes_and_clones(parent_node, trees)
-      puts "build_child_nodes_and_clones(#{parent_node.inspect})"
+    def build_child_nodes_and_clones(parent_node, incomplete_trees)
+      # puts "build_child_nodes_and_clones(#{parent_node.inspect})"
       completed_children = []
-      alternate_subtree_roots = []
 
       if parent_node.non_terminal?
         pattern = parent_node.item.left_pattern
@@ -223,22 +235,23 @@ module Linguist
         # create new children if the parent node has no children
         parent_node.children = pattern.map {|term| Node.new(term, parent_node, nil, nil, nil, parent_node.tree) } if parent_node.children.empty?
 
-        completed_children, alternate_subtree_roots, trees = complete_subtree_children(parent_node, trees)
+        completed_children, incomplete_trees = complete_subtree_children(parent_node, incomplete_trees)
       end
-      puts "completed_children = #{completed_children.inspect}"
-      puts
+      # puts "completed_children = #{completed_children.inspect}"
+      # puts
 
-      [completed_children + alternate_subtree_roots, trees]
+      [completed_children, incomplete_trees]
     end
 
     # parent_node has children, but they may need to be completed
-    def complete_subtree_children(parent_node, trees)
+    def complete_subtree_children(parent_node, incomplete_trees)
       completed_children = []
-      alternate_parent_nodes = []
 
       end_index = parent_node.end_index
       parent_node.children.reverse.each do |child_node|
-        child_node, alternate_parent_nodes = complete_child_node(child_node, parent_node, end_index, alternate_parent_nodes)
+        child_node, divergent_trees = complete_child_node(child_node, parent_node, end_index)
+
+        incomplete_trees.concat(divergent_trees)
 
         break if child_node.invalid?
         
@@ -247,22 +260,13 @@ module Linguist
       end
 
       if is_subtree_valid?(parent_node)
-        # subtree is valid, so add it to the trees
-        trees << parent_node.tree
-
         completed_children = parent_node.children
       else
-        # if the subtree is invalid, then the parse tree that the subtree is a part of is an invalid parse tree
-        
-        # remove the parse tree from the set of valid parse trees
-        trees -= [parent_node.tree]
-
-        # mark the parse tree as invalid because it is invalid
         parent_node.tree.invalid!
         parent_node.invalid!
       end
 
-      [completed_children, alternate_parent_nodes, trees]
+      [completed_children, incomplete_trees]
     end
 
     # DONE
@@ -283,10 +287,11 @@ module Linguist
     # I need to store a list of incomplete nodes per tree, and then process those until the given tree has no more
     # incomplete nodes.
 
-    def complete_child_node(child_node, subtree_root, end_index, alternate_subtree_roots)
+    def complete_child_node(child_node, subtree_root, end_index)
       # puts "complete_child_node(#{child_node}, #{subtree_root}, #{end_index}, #{subtree_roots})"
       # puts "complete? = #{child_node.complete?}"
       # puts "non_terminal? = #{child_node.non_terminal?}"
+      divergent_trees = []
       unless child_node.complete?
         if child_node.non_terminal?
           # 1. grab the item (or items) that should be associated with this child node
@@ -311,13 +316,9 @@ module Linguist
             # for every item. This ensures that we build a parse tree for every possible interpretation of the input string.
             # This is how we wind up with a parse forest, instead of a single parse tree.
             if child_node_completed_items.length > 1
-              divergent_subtree_parent_nodes = child_node_completed_items[1..-1].map do |item|
-                create_divergent_subtree(child_node, item, end_index)
+              divergent_trees = child_node_completed_items[1..-1].map do |item|
+                create_divergent_tree(child_node, item, end_index)
               end
-              alternate_subtree_roots.concat(divergent_subtree_parent_nodes)
-              # puts "adding to subtree_roots: #{new_child_node.parent.inspect}"
-              # alternate_subtree_roots << new_child_node.parent
-              # alternate_subtree_roots << new_child_node
             end
 
             finish_non_terminal_node(child_node, child_node_completed_items[0], end_index)
@@ -327,17 +328,19 @@ module Linguist
         end
       end
 
-      [child_node, alternate_subtree_roots]
+      [child_node, divergent_trees]
     end
 
     # returns the parent node of the divergent subtree
-    def create_divergent_subtree(child_node, item, end_index)
+    def create_divergent_tree(child_node, item, end_index)
       new_tree = child_node.parent.tree.clone
       new_child_node = new_tree.node_at(child_node.path)
 
       finish_non_terminal_node(new_child_node, item, end_index)
 
-      new_child_node.parent
+      new_tree.incomplete_nodes << new_child_node.parent
+
+      new_tree
     end
 
     def finish_non_terminal_node(node, item, end_index)
@@ -383,9 +386,10 @@ module Linguist
     attr_accessor :unused_completed
     attr_accessor :incomplete_nodes
 
-    def initialize(root, unused_completed = nil)
+    def initialize(root, unused_completed = nil, incomplete_nodes = [])
       @root = root
       @unused_completed = unused_completed
+      @incomplete_nodes = incomplete_nodes
       @valid = true
     end
 
@@ -402,9 +406,12 @@ module Linguist
     end
 
     def clone
-      new_tree = self.class.new(nil, unused_completed.clone)
+      new_tree = self.class.new(nil, unused_completed.clone, [])
       new_root = root.deep_clone {|node| node.tree = new_tree }
       new_tree.root = new_root
+
+      # clone the incomplete_nodes
+      new_tree.incomplete_nodes = incomplete_nodes.map {|old_node| new_tree.node_at(old_node.path) }
 
       new_tree
     end
@@ -494,7 +501,7 @@ module Linguist
     end
 
     def complete?
-      item && start_index && end_index && tree
+      start_index && end_index && tree && ((terminal? && item) || non_terminal?)
     end
 
     def path

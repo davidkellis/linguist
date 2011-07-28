@@ -12,8 +12,7 @@ class RecognitionTest < Test::Unit::TestCase
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
     assert parser.match?("aaaab")
-    # pp parser.parse_trees
-    assert_equal 1, parser.parse_trees.length
+    assert_equal [[:s, "a", [:s, "a", [:s, "a", [:s, "a", [:s, "b"]]]]]], parser.parse_trees
   end
   
   def test_lr1
