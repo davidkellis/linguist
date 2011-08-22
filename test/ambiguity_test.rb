@@ -6,7 +6,8 @@ class AmbiguityTest < Test::Unit::TestCase
   def test_ambiguous_grammar
     # S -> S S | 'a'
     grammar = Linguist::Grammar.new do
-      production(:s, alt(seq(:s, :s), 'a'))
+      production(:s, seq(:s, :s))
+      production(:s, 'a')
     end
     
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)

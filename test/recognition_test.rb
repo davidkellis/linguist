@@ -6,7 +6,8 @@ class RecognitionTest < Test::Unit::TestCase
   def test_language1
     # S -> 'a' S | 'b'
     grammar = Linguist::Grammar.new do
-      production(:s, alt(seq('a', :s), 'b'))
+      production(:s, seq('a', :s))
+      production(:s, 'b')
     end
     
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
@@ -20,7 +21,8 @@ class RecognitionTest < Test::Unit::TestCase
     # A -> 'a'
     # B -> 'b'
     grammar = grammar {
-      production(:s, alt(seq(:s, :b), :a))
+      production(:s, seq(:s, :b))
+      production(:s, :a)
       production(:a, 'a')
       production(:b, 'b')
     }
@@ -37,7 +39,8 @@ class RecognitionTest < Test::Unit::TestCase
     # A -> 'a'
     # B -> 'b'
     grammar = grammar {
-      production(:s, alt(:t, :a))
+      production(:s, :t)
+      production(:s, :a)
       production(:t, seq(:s, :b))
       production(:a, 'a')
       production(:b, 'b')

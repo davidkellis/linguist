@@ -1,4 +1,6 @@
-require 'parsers/earley'    # only for the definition of Item
+# encoding: UTF-8
+
+require 'parsers/earley_item'
 
 module Linguist
   # PracticalEarleyParser implements the Earley algorithm as described by Aycock and Horspool
@@ -6,7 +8,8 @@ module Linguist
   class PracticalEarleyParser
     attr_reader :grammar
     attr_reader :list
-  
+    attr_reader :token_stream
+    
     def initialize(bnf_grammar)
       @grammar = bnf_grammar
     
@@ -14,19 +17,20 @@ module Linguist
     end
   
     def reset
+      @token_stream = []
       @input_length = 0
       @list = []
     end
   
     def match?(input)
       reset
-      token_stream = input.chars
+      @token_stream = input.chars.to_a
       @input_length = token_stream.count
-      recognize(token_stream)
+      recognize
     end
   
     def parse(input)
-      match? ? parse_trees : []
+      match?(input) ? parse_trees : []
     end
   
     # @param alternatives is an array of pattern sequences, where each pattern sequence is 
@@ -43,7 +47,7 @@ module Linguist
   
     # This is the driver method that invokes the scanner, predictor, and completer for every item
     # in every item list
-    def recognize(token_stream)
+    def recognize
       build_initial_itemset
 
       token_stream.each_with_index do |token, position|
@@ -207,11 +211,17 @@ module Linguist
     # have incomplete nodes. If the given tree cannot be completed (i.e. it is found to be invalid), then 
     # complete_tree will be nil.
     def complete_tree(tree, incomplete_trees)
+      # puts "=" * 80
+      # puts tree.inspect
       while tree.valid? && !tree.incomplete_nodes.empty?
         node = tree.incomplete_nodes.shift
         new_nodes, incomplete_trees = build_child_nodes_and_clones(node, incomplete_trees)
         tree.incomplete_nodes.concat(new_nodes)
+  
+        # puts "*" * 80
+        # puts tree.inspect
       end
+      # puts "INVALID TREE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" unless tree.valid?
       completed_tree = tree.valid? ? tree : nil
       [completed_tree, incomplete_trees]
     end
@@ -280,7 +290,14 @@ module Linguist
       # then the parse tree that the subtree is a part of is an invalid parse tree
       return false if children.first.start_index != subtree_root.start_index
 
+      # verify that all the terminal nodes in the subtree match the characters from the input string that they "claim" to represent
+      return false unless subtree_terminals_match_input_string?(children)
+
       true
+    end
+
+    def subtree_terminals_match_input_string?(children)
+      children.select(&:terminal?).all? {|terminal_node| terminal_node.value == token_stream[terminal_node.start_index] }
     end
 
     # TODO: Incomplete nodes in divergent trees are not being added to the list of nodes that need to be processed.

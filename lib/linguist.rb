@@ -4,6 +4,7 @@ require 'set'
 require 'pp'
 require 'structures'
 require 'disambiguation'
+require 'parsers/earley_item'
 require 'parsers/earley'
 require 'parsers/practical_earley'
 
@@ -44,14 +45,14 @@ module Linguist
       Grammar::Sequence.new(args)
     end
 
-    # Creates a new Alternative using each argument as an alternative.
-    def alt(*args)
-      Grammar::Alternative.new(args)
-    end
-    
-    # Creates a new Kleene-star operator pattern
+    # returns a non terminal representing the productions:
+    # NT -> epsilon
+    # NT -> pattern NT
     def kleene(pattern)
-      Grammar::Kleene.new(pattern)
+      new_non_terminal = Grammar.unique_non_terminal
+      production(new_non_terminal, seq(pattern, new_non_terminal))
+      production(new_non_terminal, epsilon)
+      new_non_terminal
     end
     alias_method :star, :kleene
     
@@ -59,17 +60,136 @@ module Linguist
       seq(pattern, kleene(pattern))
     end
     
+    # returns a non terminal representing the productions:
+    # NT -> epsilon
+    # NT -> pattern
     def optional(pattern)
-      alt(pattern, epsilon)
+      new_non_terminal = Grammar.unique_non_terminal
+      production(new_non_terminal, pattern)
+      production(new_non_terminal, epsilon)
+      new_non_terminal
     end
 
-    # Adds +label+ to the given +pattern+.
-    def label(pattern, label)
-      pattern.label = label
-      pattern
+    # Priorities
+    # ftp://ftp.stratego-language.org/pub/stratego/docs/sdfintro.pdf
+    # Using associativity attributes, ambiguities between various applications of the same
+    #   production are resolved. To resolve ambiguities between different productions you can deﬁne
+    #   relative priorities between them.
+    # Arguments:
+    #   production1 > production2
+    def prefer(production1, production2)
+      priority_tree.prefer(production1, production2)
+    end
+    
+    # Associativity
+    # ftp://ftp.stratego-language.org/pub/stratego/docs/sdfintro.pdf
+    # To indicate whether you want operators to associate to the left or to the right,
+    #   the left and right attributes are available.
+    def associate(direction, production)
+      associativity_rules[production] = IndividualAssociativityRule.new(direction, production)
+    end
+
+    def associate_group(direction, production_group)
+      group_associativity_rule = GroupAssociativityRule.new(direction, Set.new(production_group))
+      production_group.each do |production|
+        associativity_rules[production] = group_associativity_rule
+      end
     end
   end
 
+  module Pattern
+    EPSILON = :__epsilon__
+    DOT = Object.new
+    
+    include PatternBuilder
+
+    def self.included(mod)
+      mod.class_eval do
+        attr_accessor :extension
+        attr_accessor :label
+      end
+    end
+    
+    def to_bnf(bnf_grammar)
+      @pattern
+    end
+    
+    def nullable?
+      false
+    end
+  end
+  
+  class Grammar
+    class Terminal
+      include Pattern
+      
+      def initialize(pattern)
+        @pattern = pattern
+      end
+    end
+    
+    class NonTerminal
+      include Pattern
+
+      def initialize(pattern)
+        @pattern = pattern
+      end
+    end
+
+    class Dot
+      include Pattern
+      
+      def initialize
+        @pattern = DOT
+      end
+    end
+    
+    class Epsilon
+      include Pattern
+      
+      def initialize
+        @pattern = EPSILON
+      end
+      
+      def to_bnf(bnf_grammar)
+        seq().to_bnf(bnf_grammar)
+      end
+      
+      def nullable?
+        true
+      end
+    end
+
+    class Sequence
+      include Pattern
+      
+      def initialize(pattern_sequence)
+        @sequence = pattern_sequence.map {|p| wrap(p) }
+      end
+      
+      def to_bnf(bnf_grammar)
+        @sequence.map do |pattern|
+          pattern.to_bnf(bnf_grammar)
+        end.flatten
+      end
+      
+      def nullable?
+        @sequence.all?{|pattern| pattern.nullable? }
+      end
+    end
+  end
+
+  ###############################################################################
+  ############################# Grammar Definitions #############################
+  ###############################################################################
+
+  Production = Struct.new(:non_terminal, :pattern)
+
+  # In a BNF Grammar, "productions" is a hash of the form:
+  # { :NT -> [[:A, :B, 'c'], [:D, 'e'], ...] }
+  # In other words, each key/value pair is a non-terminal/array-of-alternatives pair, where the
+  # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
+  # containing only terminals (characters) and non-terminals (symbols).
   class BNFGrammar
     attr_accessor :productions, :start
 
@@ -86,12 +206,6 @@ module Linguist
       productions[non_terminal] || []
     end
 
-    # NOTE:
-    # In a BNF Grammar, "productions" is a hash of the form:
-    # { NT -> [[A, B, 'c'], [D, 'e'], ...] }
-    # In other words, each key/value pair is a non-terminal/array-of-alternatives pair, where the
-    # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
-    # containing only terminals (characters) and non-terminals (symbols).
     def nullable_non_terminals
       unless @nullable_non_terminals
         non_terminals_directly_deriving_epsilon = non_terminals.select do |nt|
@@ -123,7 +237,7 @@ module Linguist
   class Grammar
     include PatternBuilder
     
-    attr_accessor :productions, :start
+    attr_accessor :start, :productions, :priority_tree, :associativity_rules
     
     def self.unique_non_terminal
       @id_count ||= 0
@@ -132,23 +246,25 @@ module Linguist
     end
     
     def initialize(&block)
-      @productions = {}
       @start = nil
+      @productions = {}
+      @priority_tree = PriorityTree.new
+      @associativity_rules = {}
       instance_eval(&block) if block_given?
     end
     
     def to_bnf
       bnf_grammar = BNFGrammar.new
       bnf_grammar.start = start
-      tmp_productions = productions.reduce({}) do |m,kv|
-        non_terminal, pattern = kv
-        m[non_terminal] = case pattern
-          when Grammar::Alternative
-            pattern.to_bnf(bnf_grammar)
+      tmp_productions = productions.reduce({}) do |m, kv|
+        non_terminal, alternatives = kv
+        m[non_terminal] = alternatives.map do|pattern|
+          case pattern
           when Grammar::Sequence
-            [pattern.to_bnf(bnf_grammar)]
+            pattern.to_bnf(bnf_grammar)
           else
-            [seq(pattern).to_bnf(bnf_grammar)]
+            seq(pattern).to_bnf(bnf_grammar)
+          end
         end
         m
       end
@@ -174,164 +290,26 @@ module Linguist
       productions[non_terminal] || []
     end
 
-    # Sets the production with the given name.
-    # @return a Hash representation of the production: { non-terminal => pattern }
+    # Create a production
     def production(name, pattern)
       sym = name.to_sym
       
       # set the start non-terminal if it isn't already set
       self.start ||= sym
 
-      # productions[sym] is a pattern representing one of the following Pattern types:
+      # ensure that productions[sym] is an array
+      productions[sym] ||= []
+
+      # productions[sym] is a set of pattern sequences representing one of the following Pattern types:
       # Terminal
       # NonTerminal
       # Epsilon
       # Any (Dot; wildcard)
       # Sequence (represents a sequence of patterns)
-      # Alternative (represents a collection of alternative patterns)
-      productions[sym] = wrap(pattern)
+      alternative = wrap(pattern)
+      productions[sym] << alternative
 
-      {sym => productions[sym]}
-    end
-  end
-  
-  module Pattern
-    EPSILON = :__epsilon__
-    DOT = Object.new
-    
-    include PatternBuilder
-
-    def self.included(mod)
-      mod.class_eval do
-        attr_accessor :extension
-        attr_accessor :label
-      end
-    end
-    
-    def to_bnf(bnf_grammar)
-      @pattern
-    end
-    
-    def nullable?
-      false
-    end
-  end
-  
-  class Grammar::Terminal
-    include Pattern
-    
-    def initialize(pattern)
-      @pattern = pattern
-    end
-  end
-  
-  class Grammar::NonTerminal
-    include Pattern
-
-    def initialize(pattern)
-      @pattern = pattern
-    end
-  end
-
-  class Grammar::Dot
-    include Pattern
-    
-    def initialize
-      @pattern = DOT
-    end
-  end
-  
-  class Grammar::Epsilon
-    include Pattern
-    
-    def initialize
-      @pattern = EPSILON
-    end
-    
-    def to_bnf(bnf_grammar)
-      seq().to_bnf(bnf_grammar)
-    end
-    
-    def nullable?
-      true
-    end
-  end
-
-  class Grammar::Sequence
-    include Pattern
-    
-    def initialize(pattern_sequence)
-      @sequence = pattern_sequence.map {|p| wrap(p) }
-    end
-    
-    def to_bnf(bnf_grammar)
-      @sequence.map do |pattern|
-        case pattern
-        when Grammar::Alternative
-          new_non_terminal = Grammar.unique_non_terminal
-          # add a new production to the bnf_grammar representing the inline sub-expression
-          bnf_grammar.productions[new_non_terminal] = pattern.to_bnf(bnf_grammar)
-          new_non_terminal
-        when Grammar::Kleene
-          new_non_terminal = Grammar.unique_non_terminal
-          # add a new production to the bnf_grammar representing the inline sub-expression
-          bnf_grammar.productions[new_non_terminal] = pattern.to_bnf(bnf_grammar, new_non_terminal)
-          new_non_terminal
-        else
-          pattern.to_bnf(bnf_grammar)
-        end
-      end.flatten
-    end
-    
-    def nullable?
-      @sequence.all?{|pattern| pattern.nullable? }
-    end
-  end
-  
-  class Grammar::Alternative
-    include Pattern
-    
-    def initialize(pattern_alternatives)
-      @alternatives = pattern_alternatives.map {|p| wrap(p) }
-    end
-    
-    # returns an array of term sequences
-    def to_bnf(bnf_grammar)
-      # each element in array_of_alternatives is a nested array of the form: [[pattern1, ...]]
-      # i.e. array_of_alternatives = [ [[pattern1, ...]], [[patternI, patternJ, ...]], [[patternN, ...]], ...]
-      array_of_alternatives = @alternatives.map do |pattern|
-        case pattern
-        when Grammar::Alternative
-          pattern.to_bnf(bnf_grammar)
-        when Grammar::Sequence
-          [pattern.to_bnf(bnf_grammar)]
-        else
-          [seq(pattern).to_bnf(bnf_grammar)]
-        end
-      end
-      # now concatenate all the arrays together to form a single array of the form:
-      # [ [pattern1, ...], [patternI, patternJ, ...], [patternN, ...] ]
-      array_of_alternatives.reduce{|m,array| m.concat(array) }
-    end
-    
-    def nullable?
-      @alternatives.any?{|pattern| pattern.nullable? }
-    end
-  end
-
-  class Grammar::Kleene
-    include Pattern
-    
-    def initialize(pattern)
-      @pattern = wrap(pattern)
-    end
-
-    def to_bnf(bnf_grammar, new_non_terminal)
-      alt(seq(@pattern, new_non_terminal), epsilon).to_bnf(bnf_grammar)
-    end
-    
-    def nullable?
-      true
+      Production.new(sym, alternative)
     end
   end
 end
