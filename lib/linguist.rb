@@ -86,11 +86,11 @@ module Linguist
     # To indicate whether you want operators to associate to the left or to the right,
     #   the left and right attributes are available.
     def associate(direction, production)
-      associativity_rules[production] = IndividualAssociativityRule.new(direction, production)
+      associativity_rules[production] = Disambiguation::IndividualAssociativityRule.new(direction, production)
     end
 
     def associate_group(direction, production_group)
-      group_associativity_rule = GroupAssociativityRule.new(direction, Set.new(production_group))
+      group_associativity_rule = Disambiguation::GroupAssociativityRule.new(direction, Set.new(production_group))
       production_group.each do |production|
         associativity_rules[production] = group_associativity_rule
       end
@@ -110,7 +110,7 @@ module Linguist
       end
     end
     
-    def to_bnf(bnf_grammar)
+    def to_bnf
       @pattern
     end
     
@@ -151,8 +151,8 @@ module Linguist
         @pattern = EPSILON
       end
       
-      def to_bnf(bnf_grammar)
-        seq().to_bnf(bnf_grammar)
+      def to_bnf
+        seq().to_bnf
       end
       
       def nullable?
@@ -167,10 +167,8 @@ module Linguist
         @sequence = pattern_sequence.map {|p| wrap(p) }
       end
       
-      def to_bnf(bnf_grammar)
-        @sequence.map do |pattern|
-          pattern.to_bnf(bnf_grammar)
-        end.flatten
+      def to_bnf
+        @sequence.map(&:to_bnf).flatten
       end
       
       def nullable?
@@ -191,7 +189,7 @@ module Linguist
   # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
   # containing only terminals (characters) and non-terminals (symbols).
   class BNFGrammar
-    attr_accessor :productions, :start
+    attr_accessor :start, :productions, :priority_tree, :associativity_rules
 
     def initialize
       @productions = {}
@@ -248,7 +246,7 @@ module Linguist
     def initialize(&block)
       @start = nil
       @productions = {}
-      @priority_tree = PriorityTree.new
+      @priority_tree = Disambiguation::PriorityTree.new
       @associativity_rules = {}
       instance_eval(&block) if block_given?
     end
@@ -261,14 +259,16 @@ module Linguist
         m[non_terminal] = alternatives.map do|pattern|
           case pattern
           when Grammar::Sequence
-            pattern.to_bnf(bnf_grammar)
+            pattern.to_bnf
           else
-            seq(pattern).to_bnf(bnf_grammar)
+            seq(pattern).to_bnf
           end
         end
         m
       end
       bnf_grammar.productions.merge!(tmp_productions)
+      bnf_grammar.priority_tree = priority_tree
+      bnf_grammar.associativity_rules = associativity_rules
       bnf_grammar
     end
     
@@ -309,7 +309,7 @@ module Linguist
       alternative = wrap(pattern)
       productions[sym] << alternative
 
-      Production.new(sym, alternative)
+      Production.new(sym, alternative.to_bnf)
     end
   end
 end

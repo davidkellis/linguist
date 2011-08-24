@@ -18,6 +18,10 @@ module Linguist
       !non_terminal?
     end
 
+    def production
+      @production ||= Production.new(value, children.map(&:value))
+    end
+
     def hash
       Digest::SHA1.hexdigest("#{value.hash.to_s}[#{children.map(&:hash).join(',')}]").hash
     end
@@ -40,6 +44,21 @@ module Linguist
     # adds another child to the far left-hand-side of the array of existing children
     def prepend_child(other_node)
       @children.unshift(other_node)
+    end
+
+    # Returns the Set of all Node objects that are descendants of self
+    def descendants(include_self = true)
+      visited_children = Set.new()
+      visited_children << self if include_self
+      unvisited_children = children.clone
+      until unvisited_children.empty?
+        child = unvisited_children.pop
+        unless visited_children.include?(child)
+          visited_children << child
+          unvisited_children = unvisited_children.concat(child.children.to_a)
+        end
+      end
+      visited_children
     end
   end
 end

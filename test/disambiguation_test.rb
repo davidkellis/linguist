@@ -46,6 +46,10 @@ class DisambiguationTest < Test::Unit::TestCase
     # 1 tree
     parse_forrest = parser.parse("5-6-3^2")
     assert parse_forrest.count == 1
+    
+    # 1 tree
+    parse_forrest = parser.parse("5+6-3^2")
+    assert parse_forrest.count == 1
 
     # 1 tree
     parse_forrest = parser.parse("5-6-3^2^5")

@@ -6,6 +6,8 @@ module Linguist
   # PracticalEarleyParser implements the Earley algorithm as described by Aycock and Horspool
   # in "Practical Earley Parsing" (http://webhome.cs.uvic.ca/~nigelh/Publications/PracticalEarleyParsing.pdf)
   class PracticalEarleyParser
+    include Disambiguation::TreeValidations
+
     attr_reader :grammar
     attr_reader :list
     attr_reader :token_stream
@@ -222,8 +224,12 @@ module Linguist
         # puts tree.inspect
       end
       # puts "INVALID TREE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" unless tree.valid?
-      completed_tree = tree.valid? ? tree : nil
+      completed_tree = is_tree_valid?(tree) ? tree : nil
       [completed_tree, incomplete_trees]
+    end
+
+    def is_tree_valid?(tree)
+      return tree.valid? && tree_obeys_disambiguation_rules?(tree.root)
     end
 
     # DONE
