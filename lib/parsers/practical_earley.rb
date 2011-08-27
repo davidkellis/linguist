@@ -496,6 +496,7 @@ module Linguist
   class PracticalEarleyParser::Node < Linguist::Node
     attr_accessor :item, :start_index, :end_index
     attr_accessor :parent, :tree
+    attr_writer :valid
 
     def initialize(node_value, parent = nil, item = nil, start_index = nil, end_index = nil, tree = nil)
       super(node_value)
@@ -520,7 +521,11 @@ module Linguist
     end
 
     def clone
-      self.class.new(value, parent, item, start_index, end_index, tree)
+      # PracticalEarleyParser::Node.new(value, parent, item, start_index, end_index, tree)
+      new_obj = super
+      new_obj.children = []
+      new_obj.valid = true
+      new_obj
     end
 
     def deep_clone(&blk)
