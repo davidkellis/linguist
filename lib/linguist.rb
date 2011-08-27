@@ -89,8 +89,8 @@ module Linguist
       associativity_rules[production] = Disambiguation::IndividualAssociativityRule.new(direction, production)
     end
 
-    def associate_group(direction, production_group)
-      group_associativity_rule = Disambiguation::GroupAssociativityRule.new(direction, Set.new(production_group))
+    def associate_equal_priority_group(direction, production_group)
+      group_associativity_rule = Disambiguation::EqualPriorityGroupAssociativityRule.new(direction, Set.new(production_group))
       production_group.each do |production|
         associativity_rules[production] = group_associativity_rule
       end

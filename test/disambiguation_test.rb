@@ -22,8 +22,6 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:N, '8')
     g.production(:N, '9')
     
-    # pp g.to_bnf
-
     parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
 
     # 1 tree
@@ -40,8 +38,8 @@ class DisambiguationTest < Test::Unit::TestCase
     
     g.prefer(e_exp_e, e_plus_e)
     g.prefer(e_exp_e, e_minus_e)
-    g.associate_group(:left, [e_plus_e, e_minus_e])
-    g.associate_group(:right, [e_exp_e])
+    g.associate_equal_priority_group(:left, [e_plus_e, e_minus_e])
+    g.associate_equal_priority_group(:right, [e_exp_e])
     
     # 1 tree
     parse_forrest = parser.parse("5-6-3^2")

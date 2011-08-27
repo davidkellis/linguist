@@ -2,10 +2,11 @@ module Linguist
   module Disambiguation
     module TreeValidations
       def tree_obeys_disambiguation_rules?(tree_root_node)
-        tree_root_node.descendants.all? do |tree_node|
-          subtree_obeys_priority_rules?(tree_node) && subtree_obeys_associativity_rules?(tree_node)
-        end
-        # subtree_obeys_priority_rules?(tree_root_node) && subtree_obeys_associativity_rules?(tree_root_node)
+        tree_root_node.descendants.all? { |tree_node| subtree_obeys_disambiguation_rules?(tree_node) }
+      end
+
+      def subtree_obeys_disambiguation_rules?(tree_root_node)
+        subtree_obeys_priority_rules?(tree_root_node) && subtree_obeys_associativity_rules?(tree_root_node)
       end
       
       def subtree_obeys_priority_rules?(tree_root_node)
@@ -118,26 +119,24 @@ module Linguist
       end
     end
     
-    class GroupAssociativityRule
+    class EqualPriorityGroupAssociativityRule
       def initialize(direction, production_set)
         @direction = direction
         @production_set = production_set
       end
       
       def is_parse_tree_valid?(parent_node)
-        is_parse_tree_invalid = case @direction
+        parent_production = parent_node.production
+        is_parse_tree_invalid = @production_set.include?(parent_production) && case @direction
           when :left
-            # pp parent_node.production
-            # pp parent_node.children.last.production
-            # pp @production_set.include?(parent_node.children.last.production)
-            # filter out all occurences of P as a direct child of P in the right-most argument
-            @production_set.include?(parent_node.production) && @production_set.include?(parent_node.children.last.production)
+            # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the right-most argument
+            @production_set.include?(parent_node.children.last.production)
           when :right
-            # filter out all occurences of P as a direct child of P in the left-most argument
-            @production_set.include?(parent_node.production) && @production_set.include?(parent_node.children.first.production)
+            # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the left-most argument
+            @production_set.include?(parent_node.children.first.production)
           when :non_assoc
-            # filter out all occurrences of P as a direct child of P in any argument
-            @production_set.include?(parent_node.production) && parent_node.children.any? {|child_node| @production_set.include?(child_node.production) }
+            # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in any argument
+            parent_node.children.any? {|child_node| @production_set.include?(child_node.production) }
         end
         !is_parse_tree_invalid
       end

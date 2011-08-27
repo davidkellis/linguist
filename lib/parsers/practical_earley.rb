@@ -29,6 +29,7 @@ module Linguist
       @token_stream = input.chars.to_a
       @input_length = token_stream.count
       recognize
+      # pp 'done recognizing'
     end
   
     def parse(input)
@@ -217,8 +218,12 @@ module Linguist
       # puts tree.inspect
       while tree.valid? && !tree.incomplete_nodes.empty?
         node = tree.incomplete_nodes.shift
-        new_nodes, incomplete_trees = build_child_nodes_and_clones(node, incomplete_trees)
-        tree.incomplete_nodes.concat(new_nodes)
+        new_child_nodes, incomplete_trees = build_child_nodes_and_clones(node, incomplete_trees)
+        
+        # Append the new nodes in reverse order so that the left-most child node will be processed last
+        # We need the left-most node to be processed last so that the online-disambiguation filtering will
+        # work properly.
+        tree.incomplete_nodes.concat(new_child_nodes.reverse)
   
         # puts "*" * 80
         # puts tree.inspect
@@ -229,7 +234,7 @@ module Linguist
     end
 
     def is_tree_valid?(tree)
-      return tree.valid? && tree_obeys_disambiguation_rules?(tree.root)
+      return tree.valid? # && tree_obeys_disambiguation_rules?(tree.root)
     end
 
     # DONE
@@ -298,6 +303,13 @@ module Linguist
 
       # verify that all the terminal nodes in the subtree match the characters from the input string that they "claim" to represent
       return false unless subtree_terminals_match_input_string?(children)
+      
+      # declare this subtree invalid if the subtree's parent node doesn't conform to the disambiguation rules
+      # This assumes that all of the subtree_parent's grandchild-nodes are complete.
+      subtree_parent = subtree_root.parent
+      if subtree_parent && subtree_root.start_index == subtree_parent.start_index
+        return false unless subtree_obeys_disambiguation_rules?(subtree_parent)
+      end
 
       true
     end
