@@ -145,8 +145,9 @@ module Linguist
     
     # examine every item in every item-set within list, and filter out all non-complete items.
     # note: a complete item is an item of the form [A → ...•, j] (i.e. the dot is at the end of the pattern)
+    # returns an array of the form [item_set1, item_set2, ...] where each item_set is a Set object
     def completed_list
-      list.map{|item_set| item_set.select{|item| item.right_pattern.empty? } }
+      list.map{|item_set| item_set.select{|item| item.right_pattern.empty? }.to_set }
     end
     
     # DONE
@@ -189,7 +190,8 @@ module Linguist
     def construct_initial_trees_from_roots(root_nodes, completed_items)
       root_nodes.map do |root_node|
         unused_completed = completed_items.clone
-        unused_completed[root_node.end_index + 1] -= [root_node.item]
+        # unused_completed[root_node.end_index + 1] -= [root_node.item]
+        unused_completed[root_node.end_index + 1].delete(root_node.item)
         tree = Tree.new(root_node, unused_completed, [root_node])
         root_node.tree = tree     # complete the root node by setting its tree attribute
         tree
@@ -379,7 +381,8 @@ module Linguist
     end
 
     def finish_non_terminal_node(node, item, end_index)
-      node.tree.unused_completed[end_index + 1] -= [item]
+      # node.tree.unused_completed[end_index + 1] -= [item]
+      node.tree.unused_completed[end_index + 1].delete(item)
       node.item = item
       node.start_index = item.position
       node.end_index = end_index
