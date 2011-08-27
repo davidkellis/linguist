@@ -520,7 +520,11 @@ module Linguist
     end
 
     def clone
-      self.class.new(value, parent, item, start_index, end_index, tree)
+      # PracticalEarleyParser::Node.new(value, parent, item, start_index, end_index, tree)
+      new_obj = super
+      new_obj.children = []
+      new_obj.valid = true
+      new_obj
     end
 
     def deep_clone(&blk)
