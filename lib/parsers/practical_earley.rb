@@ -190,8 +190,11 @@ module Linguist
     def construct_initial_trees_from_roots(root_nodes, completed_items)
       root_nodes.map do |root_node|
         unused_completed = completed_items.clone
+        
         # unused_completed[root_node.end_index + 1] -= [root_node.item]
-        unused_completed[root_node.end_index + 1].delete(root_node.item)
+        tmp_item_set = unused_completed[root_node.end_index + 1]
+        unused_completed[root_node.end_index + 1] = tmp_item_set.dup.delete(root_node.item)
+        
         tree = Tree.new(root_node, unused_completed, [root_node])
         root_node.tree = tree     # complete the root node by setting its tree attribute
         tree
@@ -382,7 +385,9 @@ module Linguist
 
     def finish_non_terminal_node(node, item, end_index)
       # node.tree.unused_completed[end_index + 1] -= [item]
-      node.tree.unused_completed[end_index + 1].delete(item)
+      tmp_item_set = node.tree.unused_completed[end_index + 1]
+      node.tree.unused_completed[end_index + 1] = tmp_item_set.dup.delete(item)
+
       node.item = item
       node.start_index = item.position
       node.end_index = end_index
@@ -524,7 +529,6 @@ module Linguist
     end
 
     def clone
-      # PracticalEarleyParser::Node.new(value, parent, item, start_index, end_index, tree)
       new_obj = super
       new_obj.children = []
       new_obj.valid = true

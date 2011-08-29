@@ -3,7 +3,7 @@
 $: << File.expand_path('../../lib', __FILE__)
 require 'test/unit'
 require "linguist"
-require 'perftools'
+# require 'perftools'
 
 class DisambiguationTest < Test::Unit::TestCase
   def test_disambiguation_filters
@@ -170,11 +170,9 @@ class DisambiguationTest < Test::Unit::TestCase
                               '/',
                               [:E,
                                 [:N, '6']]]]
-    PerfTools::CpuProfiler.start("/tmp/disambiguation_test") do
-      parse_forrest = parser.parse("1-2*3^4+5/6")
-    end
-    assert parse_forrest.count == 1
-    assert_equal expected_parse_tree, parse_forrest.first
+    # parse_forrest = parser.parse("1-2*3^4+5/6")
+    # assert parse_forrest.count == 1
+    # assert_equal expected_parse_tree, parse_forrest.first
 
     # "1-2*3^4+5/6*7" => (1-(2*(3^4)))+((5/6)*7)
     expected_parse_tree = [:E,
@@ -203,8 +201,10 @@ class DisambiguationTest < Test::Unit::TestCase
                               '*',
                               [:E,
                                 [:N, '7']]]]
-    # parse_forrest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
-    # assert parse_forrest.count == 1
-    # assert_equal expected_parse_tree, parse_forrest.first
+    # PerfTools::CpuProfiler.start("/tmp/disambiguation_test") do
+      parse_forrest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
+    # end
+    assert parse_forrest.count == 1
+    assert_equal expected_parse_tree, parse_forrest.first
   end
 end
