@@ -149,7 +149,28 @@ module Linguist
     def completed_list
       list.map{|item_set| item_set.select{|item| item.right_pattern.empty? }.to_set }
     end
+
+    def tree_nodes
+      node_sets = completed_list.map do |item_set|
+        item_set.map.with_index do |item, index|
+          exclusive_index_at_which_substring_ends = index
+          ParseForest::Node.new(Production.new(item.non_terminal, item.left_pattern),
+                                item.position, 
+                                exclusive_index_at_which_substring_ends)
+        end
+      end
+      node_sets.flatten
+    end
+
+    def parse_forest
+      root_nodes = tree_nodes.select{|node| node.production.non_terminal == grammar.start && node.start_index == 0 && node.end_index == @input_length }
+      ParseForest.new(tree_nodes, root_nodes)
+    end
     
+###################################################################################################
+######################## THE CODE BELOW IS THE OLD TREE GENERATION LOGIC ##########################
+###################################################################################################
+
     # DONE
     # returns an array of parse trees that can be built given a grammar and input
     def parse_trees
