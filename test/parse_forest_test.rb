@@ -23,7 +23,7 @@ class ParseForestTest < Test::Unit::TestCase
 
     s_0_1, s_1_2, s_0_2, s_2_3, s_1_3, s_0_3, s_3_4, s_2_4, s_1_4, s_0_4 = nodes
 
-    parse_forest = Linguist::ParseForest.new(nodes, [s_0_4])
+    parse_forest = Linguist::ParseForest.new(nodes, s_0_4)
     
     s_0_4_derivations = [
       [s_0_1, s_1_4],
@@ -73,5 +73,50 @@ class ParseForestTest < Test::Unit::TestCase
       [ Linguist::ParseForest::TerminalNode.new('a', 2, 3) ]
     ]
     assert_equal s_2_3_derivations, parse_forest.generate_alternatives(s_2_3)
+
+    expected_parse_trees = [
+      [:s, 
+        [:s, "a"], 
+        [:s, 
+          [:s, "a"], 
+          [:s, 
+            [:s, "a"], 
+            [:s, "a"]]]],
+
+      [:s, 
+        [:s, "a"], 
+        [:s, 
+          [:s, 
+            [:s, "a"], 
+            [:s, "a"]], 
+          [:s, "a"]]],
+
+      [:s, 
+        [:s, 
+          [:s, "a"], 
+          [:s, "a"]], 
+        [:s, 
+          [:s, "a"], 
+          [:s, "a"]]],
+
+      [:s, 
+        [:s, 
+          [:s, "a"], 
+          [:s, 
+            [:s, "a"], 
+            [:s, "a"]]], 
+        [:s, "a"]],
+
+      [:s, 
+        [:s, 
+          [:s, 
+            [:s, "a"], 
+            [:s, "a"]], 
+          [:s, "a"]], 
+        [:s, "a"]]
+    ]
+    parse_forest.generate_node_alternatives!
+    parse_trees = parse_forest.to_enum.map {|tree, or_nodes| tree.to_sexp }
+    assert_equal expected_parse_trees, parse_trees
   end
 end

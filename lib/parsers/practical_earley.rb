@@ -164,7 +164,8 @@ module Linguist
 
     def parse_forest
       root_nodes = tree_nodes.select{|node| node.production.non_terminal == grammar.start && node.start_index == 0 && node.end_index == @input_length }
-      ParseForest.new(tree_nodes, root_nodes)
+      raise "Something went wrong. There are multiple root nodes." if root_nodes.length > 1
+      ParseForest.new(tree_nodes, root_nodes.first)
     end
     
 ###################################################################################################
