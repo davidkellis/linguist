@@ -160,7 +160,7 @@ module Linguist
           end
 
           # yield the constructed parse tree to the block
-          yielder.yield(@root_node, or_nodes.map{|or_node| [or_node, or_node.branch_index] }) if tree_modified
+          yielder.yield(@root_node, Hash[ or_nodes.map{|or_node| [or_node, or_node.branch_index] } ]) if tree_modified
           tree_modified = false
         end until or_nodes.empty?
       end
