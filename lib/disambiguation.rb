@@ -10,13 +10,15 @@ module Linguist
       end
       
       def subtree_obeys_priority_rules?(tree_root_node)
-        grammar.priority_tree.is_parse_tree_valid?(tree_root_node)
+        return true if priority_tree.nil?
+        priority_tree.is_parse_tree_valid?(tree_root_node)
       end
       
       def subtree_obeys_associativity_rules?(tree_root_node)
+        return true if associativity_rules.nil?
         if tree_root_node.non_terminal?
-          if grammar.associativity_rules.include?(tree_root_node.production)
-            associativity_rule = @grammar.associativity_rules[tree_root_node.production]
+          if associativity_rules.include?(tree_root_node.production)
+            associativity_rule = associativity_rules[tree_root_node.production]
             associativity_rule.is_parse_tree_valid?(tree_root_node)
           else
             true    # there is no associativity rule that applies to the production from which tree_root_node was derived

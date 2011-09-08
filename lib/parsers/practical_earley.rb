@@ -17,6 +17,14 @@ module Linguist
     
       reset
     end
+
+    def associativity_rules
+      grammar.associativity_rules
+    end
+
+    def priority_tree
+      grammar.priority_tree
+    end
   
     def reset
       @token_stream = []
@@ -165,7 +173,7 @@ module Linguist
     def parse_forest
       root_nodes = tree_nodes.select{|node| node.production.non_terminal == grammar.start && node.start_index == 0 && node.end_index == @input_length }
       raise "Something went wrong. There are multiple root nodes." if root_nodes.length > 1
-      ParseForest.new(tree_nodes, root_nodes.first)
+      ParseForest.new(tree_nodes, root_nodes.first, associativity_rules, priority_tree)
     end
     
 ###################################################################################################

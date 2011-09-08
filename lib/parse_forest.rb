@@ -1,9 +1,7 @@
 module Linguist
   class ParseForest
-    include Enumerable
-
     class Node
-      attr_accessor :production, :start_index, :end_index, :alternatives, :branch_index, :value, :children
+      attr_accessor :production, :start_index, :end_index, :alternatives, :branch_index, :value, :children, :parent
 
       def initialize(production, start_index, end_index)
         @production = production
@@ -14,9 +12,17 @@ module Linguist
         @value = production.non_terminal
         @children = nil
         @branch_index = nil
+        @parent = nil
       end
 
       def terminal?; false; end
+      def non_terminal?; true; end
+
+      def is_rightmost_child?
+        if parent
+          parent.children.last == self       # this node is the rightmost child of the parent
+        end
+      end
 
       def OR_node?
         @alternatives.length > 1
@@ -29,6 +35,8 @@ module Linguist
       def select_branch!(branch_index)
         self.branch_index = branch_index
         @children = @alternatives[branch_index]
+        @children.each {|child| child.parent = self }
+        @children
       end
 
       # returns the index of the newly selected branch
@@ -57,14 +65,23 @@ module Linguist
       end
     end
 
-    TerminalNode = Struct.new(:value, :start_index, :end_index)
+    TerminalNode = Struct.new(:value, :start_index, :end_index, :parent)
     class TerminalNode
       def OR_node?; false; end
       def terminal?; true; end
+      def non_terminal?; false; end
       def to_sexp; value; end
     end
 
-    def initialize(nodes, root_node)
+
+    include Enumerable
+    include Disambiguation::TreeValidations
+
+    attr_accessor :associativity_rules, :priority_tree
+
+    def initialize(nodes, root_node, associativity_rules = nil, priority_tree = nil)
+      @associativity_rules = associativity_rules
+      @priority_tree = priority_tree
       @root_node = root_node
       @nodes = nodes
       @nodes_by_start_index = @nodes.group_by {|node| node.start_index }
@@ -149,6 +166,15 @@ module Linguist
 
             node = nodes.pop
 
+            if branch_is_invalid?(node)
+              # 1. prune this tree from the parse forest
+              # all we have to do is backtrack and try another branch
+
+              # 2. backtrack
+              tree_modified = false
+              break
+            end
+
             if node.OR_node?
               or_nodes << node
               node.select_next_branch!
@@ -163,6 +189,12 @@ module Linguist
           yielder.yield(@root_node, Hash[ or_nodes.map{|or_node| [or_node, or_node.branch_index] } ]) if tree_modified
           tree_modified = false
         end until or_nodes.empty?
+      end
+    end
+
+    def branch_is_invalid?(child_node)
+      if child_node.non_terminal? && child_node.is_rightmost_child?
+        !subtree_obeys_disambiguation_rules?(child_node.parent)
       end
     end
 
