@@ -41,7 +41,7 @@ module Linguist
     end
   
     def parse(input)
-      match?(input) ? parse_trees : []
+      match?(input) ? parse_forest : []
     end
   
     # @param alternatives is an array of pattern sequences, where each pattern sequence is 
@@ -159,8 +159,8 @@ module Linguist
     end
 
     def tree_nodes
-      node_sets = completed_list.map do |item_set|
-        item_set.map.with_index do |item, index|
+      node_sets = completed_list.map.with_index do |item_set, index|
+        item_set.map do |item|
           exclusive_index_at_which_substring_ends = index
           ParseForest::Node.new(Production.new(item.non_terminal, item.left_pattern),
                                 item.position, 
@@ -171,13 +171,14 @@ module Linguist
     end
 
     def parse_forest
-      root_nodes = tree_nodes.select{|node| node.production.non_terminal == grammar.start && node.start_index == 0 && node.end_index == @input_length }
+      nodes = tree_nodes
+      root_nodes = nodes.select{|node| node.production.non_terminal == grammar.start && node.start_index == 0 && node.end_index == @input_length }
       raise "Something went wrong. There are multiple root nodes." if root_nodes.length > 1
-      ParseForest.new(tree_nodes, root_nodes.first, associativity_rules, priority_tree)
+      ParseForest.new(nodes, root_nodes.first, associativity_rules, priority_tree)
     end
     
 ###################################################################################################
-######################## THE CODE BELOW IS THE OLD TREE GENERATION LOGIC ##########################
+############## THE REST OF THE CODE IN THIS CLASS IS THE OLD TREE GENERATION LOGIC ################
 ###################################################################################################
 
     # DONE

@@ -13,15 +13,8 @@ class AmbiguityTest < Test::Unit::TestCase
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
     assert parser.match?("aaaa")
+
     expected_parse_trees = [
-      [:s, 
-        [:s, 
-          [:s, "a"], 
-          [:s, "a"]], 
-        [:s, 
-          [:s, "a"], 
-          [:s, "a"]]],
-      
       [:s, 
         [:s, "a"], 
         [:s, 
@@ -29,7 +22,7 @@ class AmbiguityTest < Test::Unit::TestCase
           [:s, 
             [:s, "a"], 
             [:s, "a"]]]],
-      
+
       [:s, 
         [:s, "a"], 
         [:s, 
@@ -37,7 +30,15 @@ class AmbiguityTest < Test::Unit::TestCase
             [:s, "a"], 
             [:s, "a"]], 
           [:s, "a"]]],
-      
+
+      [:s, 
+        [:s, 
+          [:s, "a"], 
+          [:s, "a"]], 
+        [:s, 
+          [:s, "a"], 
+          [:s, "a"]]],
+
       [:s, 
         [:s, 
           [:s, "a"], 
@@ -45,7 +46,7 @@ class AmbiguityTest < Test::Unit::TestCase
             [:s, "a"], 
             [:s, "a"]]], 
         [:s, "a"]],
-      
+
       [:s, 
         [:s, 
           [:s, 
@@ -55,6 +56,9 @@ class AmbiguityTest < Test::Unit::TestCase
         [:s, "a"]]
     ]
 
-    assert_equal expected_parse_trees, parser.parse_trees
+    parse_forest = parser.parse_forest
+    parse_forest.generate_node_alternatives!
+    parse_trees = parse_forest.map {|tree, or_nodes| tree.to_sexp }
+    assert_equal expected_parse_trees, parse_trees
   end
 end
