@@ -26,16 +26,16 @@ class DisambiguationTest < Test::Unit::TestCase
     parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
 
     # 1 tree
-    parse_forrest = parser.parse("5+6")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("5+6")
+    assert parse_forest.count == 1
     
     # 2 trees
-    parse_forrest = parser.parse("5+6-7")
-    assert parse_forrest.count == 2
+    parse_forest = parser.parse("5+6-7")
+    assert parse_forest.count == 2
     
     # 5 trees
-    parse_forrest = parser.parse("5+6-3^2")
-    assert parse_forrest.count == 5
+    parse_forest = parser.parse("5+6-3^2")
+    assert parse_forest.count == 5
     
     g.prefer(e_exp_e, e_plus_e)
     g.prefer(e_exp_e, e_minus_e)
@@ -43,16 +43,16 @@ class DisambiguationTest < Test::Unit::TestCase
     g.associate_equal_priority_group(:right, [e_exp_e])
     
     # 1 tree
-    parse_forrest = parser.parse("5-6-3^2")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("5-6-3^2")
+    assert parse_forest.count == 1
     
     # 1 tree
-    parse_forrest = parser.parse("5+6-3^2")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("5+6-3^2")
+    assert parse_forest.count == 1
 
     # 1 tree
-    parse_forrest = parser.parse("5-6-3^2^5")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("5-6-3^2^5")
+    assert parse_forest.count == 1
   end
 
   def test_disambiguated_tree
@@ -77,28 +77,28 @@ class DisambiguationTest < Test::Unit::TestCase
     parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
 
     # 1 trees
-    parse_forrest = parser.parse("1-2")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("1-2")
+    assert parse_forest.count == 1
     
     # 2 trees
-    parse_forrest = parser.parse("1-2*3")
-    assert parse_forrest.count == 2
+    parse_forest = parser.parse("1-2*3")
+    assert parse_forest.count == 2
     
     # 5 trees
-    parse_forrest = parser.parse("1-2*3^4")
-    assert parse_forrest.count == 5
+    parse_forest = parser.parse("1-2*3^4")
+    assert parse_forest.count == 5
     
     # 14 trees
-    parse_forrest = parser.parse("1-2*3^4+5")
-    assert parse_forrest.count == 14
+    parse_forest = parser.parse("1-2*3^4+5")
+    assert parse_forest.count == 14
 
     # 42 trees - takes ~10 seconds to run
-    # parse_forrest = parser.parse("1-2*3^4+5/6")
-    # assert parse_forrest.count == 42
+    parse_forest = parser.parse("1-2*3^4+5/6")
+    assert parse_forest.count == 42
     
     # 132 trees - takes ~10 minutes to run
-    # parse_forrest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
-    # assert parse_forrest.count == 132
+    parse_forest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
+    assert parse_forest.count == 132
 
     g.prefer(e_exp_e, e_multiply_e)
     g.prefer(e_exp_e, e_divide_e)
@@ -112,17 +112,16 @@ class DisambiguationTest < Test::Unit::TestCase
     
     # multiplication and divisino are left associative but they are the same priority, so we group them together
     g.associate_equal_priority_group(:left, [e_divide_e, e_multiply_e])
-    
     g.associate_equal_priority_group(:right, [e_exp_e])
 
-    parse_forrest = parser.parse("1-2")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("1-2")
+    assert parse_forest.count == 1
     
-    parse_forrest = parser.parse("1-2*3")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("1-2*3")
+    assert parse_forest.count == 1
     
-    parse_forrest = parser.parse("1-2*3^4")
-    assert parse_forrest.count == 1
+    parse_forest = parser.parse("1-2*3^4")
+    assert parse_forest.count == 1
     
     # "1-2*3^4+5" => (1-(2*(3^4)))+5
     expected_parse_tree = [:E,
@@ -143,9 +142,9 @@ class DisambiguationTest < Test::Unit::TestCase
                             '+',
                             [:E,
                               [:N, '5']]]
-    parse_forrest = parser.parse("1-2*3^4+5")
-    assert parse_forrest.count == 1
-    assert_equal expected_parse_tree, parse_forrest.first
+    parse_forest = parser.parse("1-2*3^4+5")
+    assert parse_forest.count == 1
+    assert_equal expected_parse_tree, parse_forest.first[0].to_sexp
 
     # "1-2*3^4+5/6" => (1-(2*(3^4)))+(5/6)
     expected_parse_tree = [:E,
@@ -170,9 +169,9 @@ class DisambiguationTest < Test::Unit::TestCase
                               '/',
                               [:E,
                                 [:N, '6']]]]
-    # parse_forrest = parser.parse("1-2*3^4+5/6")
-    # assert parse_forrest.count == 1
-    # assert_equal expected_parse_tree, parse_forrest.first
+    parse_forest = parser.parse("1-2*3^4+5/6")
+    assert parse_forest.count == 1
+    assert_equal expected_parse_tree, parse_forest.first[0].to_sexp
 
     # "1-2*3^4+5/6*7" => (1-(2*(3^4)))+((5/6)*7)
     expected_parse_tree = [:E,
@@ -202,9 +201,9 @@ class DisambiguationTest < Test::Unit::TestCase
                               [:E,
                                 [:N, '7']]]]
     # PerfTools::CpuProfiler.start("/tmp/disambiguation_test") do
-      parse_forrest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
+    parse_forest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
     # end
-    assert parse_forrest.count == 1
-    assert_equal expected_parse_tree, parse_forrest.first
+    assert parse_forest.count == 1
+    assert_equal expected_parse_tree, parse_forest.first[0].to_sexp
   end
 end

@@ -55,6 +55,10 @@ module Linguist
             is_rule_violated = parent_node.children.any? do |child_node|
               lesser_priority_productions.include?(child_node.production)
             end
+            # if is_rule_violated
+            #   pp 'rule violated'
+            #   # pp parent_node.to_sexp
+            # end
             !is_rule_violated
           else
             true    # there are no priority rules that reference parent_node.production

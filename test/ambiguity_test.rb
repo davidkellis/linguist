@@ -57,7 +57,6 @@ class AmbiguityTest < Test::Unit::TestCase
     ]
 
     parse_forest = parser.parse_forest
-    parse_forest.generate_node_alternatives!
     parse_trees = parse_forest.map {|tree, or_nodes| tree.to_sexp }
     assert_equal expected_parse_trees, parse_trees
   end

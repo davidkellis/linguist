@@ -8,6 +8,8 @@ class ParseForestTest < Test::Unit::TestCase
     # S -> S S | 'a'
     # with the input 'aaaa'
 
+    input = "aaaa"
+
     s__a = Linguist::Production.new(:s, ['a'])
     s__s_s = Linguist::Production.new(:s, [:s, :s])
 
@@ -26,7 +28,7 @@ class ParseForestTest < Test::Unit::TestCase
 
     s_0_1, s_1_2, s_0_2, s_2_3, s_1_3, s_0_3, s_3_4, s_2_4, s_1_4, s_0_4 = nodes
 
-    parse_forest = Linguist::ParseForest.new(nodes, s_0_4)
+    parse_forest = Linguist::ParseForest.new(input, nodes, [s_0_4])
     
     s_0_4_derivations = [
       [s_0_1, s_1_4],
@@ -128,6 +130,8 @@ class ParseForestTest < Test::Unit::TestCase
     # S -> S S | 'a'
     # with the input 'aaaa'
 
+    input = "aaaa"
+
     s__a = Linguist::Production.new(:s, ['a'])
     s__s_s = Linguist::Production.new(:s, [:s, :s])
 
@@ -149,7 +153,7 @@ class ParseForestTest < Test::Unit::TestCase
     associativity_rules = {}
     associativity_rules[s__s_s] = Linguist::Disambiguation::IndividualAssociativityRule.new(:left, s__s_s)
 
-    parse_forest = Linguist::ParseForest.new(nodes, s_0_4, associativity_rules, nil)
+    parse_forest = Linguist::ParseForest.new(input, nodes, [s_0_4], associativity_rules, nil)
 
     expected_parse_trees = [
       [:s, 

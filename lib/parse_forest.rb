@@ -15,8 +15,22 @@ module Linguist
         @parent = nil
       end
 
+      def reset!
+        @children = nil
+        @branch_index = nil
+        @parent = nil
+      end
+
+      def reset_next_branch!
+        @branch_index = nil
+      end
+
       def terminal?; false; end
       def non_terminal?; true; end
+
+      def has_more_branches?
+        @branch_index < (branch_count - 1)
+      end
 
       def is_rightmost_child?
         if parent
@@ -35,7 +49,7 @@ module Linguist
       def select_branch!(branch_index)
         self.branch_index = branch_index
         @children = @alternatives[branch_index]
-        @children.each {|child| child.parent = self }
+        @children.each {|child| child.parent = self }     # point each child's parent pointer to the this node, self.
         @children
       end
 
@@ -53,7 +67,7 @@ module Linguist
       end
 
       def to_s
-        "Node(#{object_id} #{production} #{start_index} #{end_index})"
+        "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count})"
       end
 
       def to_sexp
@@ -67,10 +81,18 @@ module Linguist
 
     TerminalNode = Struct.new(:value, :start_index, :end_index, :parent)
     class TerminalNode
+      def production; :no_production; end
       def OR_node?; false; end
       def terminal?; true; end
       def non_terminal?; false; end
       def to_sexp; value; end
+      def reset_next_branch!; end
+      def inspect
+        to_s
+      end
+      def to_s
+        "TerminalNode(#{object_id} value='#{value}' #{start_index} #{end_index})"
+      end
     end
 
 
@@ -79,20 +101,22 @@ module Linguist
 
     attr_accessor :associativity_rules, :priority_tree
 
-    def initialize(nodes, root_node, associativity_rules = nil, priority_tree = nil)
+    def initialize(input_string, nodes, root_nodes, associativity_rules = nil, priority_tree = nil)
+      @input_string = input_string
+      @root_nodes = root_nodes
+      @nodes = nodes
       @associativity_rules = associativity_rules
       @priority_tree = priority_tree
-      @root_node = root_node
-      @nodes = nodes
+
       @nodes_by_start_index = @nodes.group_by {|node| node.start_index }
     end
 
     # this generates all the alternative patterns for each node
     # this is the equivalent of generating a parse forest grammar using the given nodes
+    # this is also the equivalent of building a DAG representing the parse forest
     def generate_node_alternatives!
       @nodes.each do |node|
         node.alternatives = generate_alternatives(node)
-        node.select_next_branch! if node.branch_count == 1
       end
     end
 
@@ -116,8 +140,13 @@ module Linguist
             end
           else
             new_pattern = pattern.clone
-            new_pattern[term_index] = TerminalNode.new(new_pattern[term_index], start_index, start_index + 1)
-            [new_pattern]
+            character = new_pattern[term_index]
+            if @input_string[start_index] == character
+              new_pattern[term_index] = TerminalNode.new(character, start_index, start_index + 1)
+              [new_pattern]
+            else    # the current alternative is invalid, so drop it by representing the current alternative as an empty alternative
+              []    # an empty alternative will be dropped
+            end
           end
         end.flatten(1)
       end
@@ -139,68 +168,127 @@ module Linguist
       end
     end
 
+    def reset_all_nodes!
+      @nodes.each(&:reset!)
+    end
+
     # Returns an Enumerator that represents a sequence of parse trees
+    # The enumerator traverses the DAG in a depth-first manner.
+    # The disambiguation rules are applied as DAG-branches are chosen.
     # Each element of the enumerator is a pair of the form: [root_node, {or_node1: index1, ..., or_nodeN: indexN}]
     #   The root_node is the root node of the tree.
     #   The hash of OR-nodes indicates the branch-index of each active/used OR-node in the tree.
     def to_enum
       Enumerator.new() do |yielder|
-        nodes = [@root_node]
-        or_nodes = []
-        tree_modified = false
+        reset_all_nodes!
+        @root_nodes.each do |root_node|
+          # pp "root node = #{root_node.inspect}"
+          next_node_index = 0
 
-        begin
-          until or_nodes.empty?
-            or_node = or_nodes.pop
-            if or_node.select_next_branch!      # switching branches was successful, so we can stop backtracking
+          # nodes is an array of [node, index] pairs s.t. the index is a strictly increasing integer, starting at 0
+          # each new item pushed onto the nodes stack has an index that is one greater than the index of the previously added pair
+          nodes = [[root_node, next_node_index]]
+
+          # or_nodes is also an array of [node, index] pairs.
+          # the index of each or_node pair is significant because when the need arises to backtrack to the last branch-point
+          # we need to remove all the node-pairs in the nodes array that were added after the or_node was last added to the nodes
+          # list. We accomplish this by popping all the pairs on the nodes array that have a node_index 
+          # greater than or equal to the or_node's index.
+          or_nodes = []
+
+          begin
+            tree_modified = false
+
+            # this implements backtracking logic
+            # every pop of an or_node is a search for the next branch point
+            until or_nodes.empty?
+              or_node, or_node_index = or_nodes.pop
+              # puts "PROCESSING OR node: #{or_node.inspect}"
+
+              # remove all the pairs that were added appended to the nodes array *after* the current branch was taken.
+              # that is, pop all the pairs on the nodes array that have a node_index (i.e. the second element in the pair)
+              # greater than or equal to the or_node_index
+              while !nodes.empty? && nodes.last[1] >= or_node_index
+                nodes.pop
+              end
+
+              # if the current or_node has more branches, add it to the nodes list so that the next branch will be built-out
+              if or_node.has_more_branches?
+                nodes << [or_node, next_node_index += 1]
+                break
+              end
+            end
+
+            # visit the nodes in the tree
+            # a node is only visited if its parent changes
+            # when the following until loop finishes, we will have constructed a parse tree with root node root_node
+            until nodes.empty?
               tree_modified = true
-              or_nodes << or_node
-              nodes.concat(or_node.children.reverse)
-              break
+
+              node_pair = nodes.pop
+              node, node_index = node_pair
+
+              # puts "processing #{node.inspect}"
+
+              # we want to check the subtree for validity before adding this node's children to be processed
+              if branch_is_invalid?(node)
+                # puts 'invalid'
+                # backtrack to the last branch point and select the next possible branch
+                tree_modified = false
+                break
+              end
+
+              if node.non_terminal?
+                node.select_next_branch!
+                or_nodes << node_pair if node.OR_node?
+              end
+
+              # we want to visit the node's children, so add them to the stack
+              if node.non_terminal?
+                new_nodes = node.children
+                new_nodes.each(&:reset_next_branch!)    # reset them so that when they're visited, the call to select_next_branch! won't select a non-existent branch
+                new_pairs = new_nodes.reverse.map{|node| [node, next_node_index += 1] }
+                nodes.concat(new_pairs)
+              end
             end
-          end
 
-          # when the following until loop finishes, we will have constructed a parse tree with root node @root_node
-          until nodes.empty?
-            tree_modified = true
-
-            node = nodes.pop
-
-            if branch_is_invalid?(node)
-              # 1. prune this tree from the parse forest
-              # all we have to do is backtrack and try another branch
-
-              # 2. backtrack
-              tree_modified = false
-              break
+            # yield the constructed parse tree and corresponding branch selections to the block
+            if tree_modified
+              or_node_branch_index_pairs = or_nodes.map do |node_stack_index_pair|
+                or_node = node_stack_index_pair.first
+                [or_node, or_node.branch_index]
+              end
+              selected_branches = Hash[ or_node_branch_index_pairs ]
+              yielder.yield(root_node, selected_branches)
             end
-
-            if node.OR_node?
-              or_nodes << node
-              node.select_next_branch!
-            end
-
-            unless node.terminal?
-              nodes.concat(node.children.reverse)
-            end
-          end
-
-          # yield the constructed parse tree to the block
-          yielder.yield(@root_node, Hash[ or_nodes.map{|or_node| [or_node, or_node.branch_index] } ]) if tree_modified
-          tree_modified = false
-        end until or_nodes.empty?
+          end until or_nodes.empty?
+        end    # end of @root_nodes.each
       end
     end
 
     def branch_is_invalid?(child_node)
       if child_node.non_terminal? && child_node.is_rightmost_child?
-        !subtree_obeys_disambiguation_rules?(child_node.parent)
+        # puts 'checking tree for validity:'
+        # puts child_node.parent.to_sexp
+        invalid = !subtree_obeys_disambiguation_rules?(child_node.parent)
+        # if invalid
+        #   pp 'invalid'
+        #   pp child_node.parent
+        #   pp child_node
+        # end
+        invalid
       end
     end
 
     # this method enumerates the trees in the parse forest
     def each(&blk)
       to_enum.each(&blk)
+    end
+
+    def trees
+      Enumerator.new() do |yielder|
+        to_enum.map {|tree, or_nodes| yielder.yield(tree) }
+      end
     end
   end
 end
