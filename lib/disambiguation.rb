@@ -1,12 +1,22 @@
 module Linguist
   module Disambiguation
-    module TreeValidations
-      def tree_obeys_disambiguation_rules?(tree_root_node)
-        tree_root_node.descendants.all? { |tree_node| subtree_obeys_disambiguation_rules?(tree_node) }
+    class TreeValidator
+      attr_accessor :associativity_rules, :priority_tree, :reject_rules
+
+      def initialize()
+        @associativity_rules = {}
+        @priority_tree = PriorityTree.new
+        @reject_rules = {}
       end
 
-      def subtree_obeys_disambiguation_rules?(tree_root_node)
-        subtree_obeys_priority_rules?(tree_root_node) && subtree_obeys_associativity_rules?(tree_root_node)
+      def tree_obeys_disambiguation_rules?(token_stream, tree_root_node)
+        tree_root_node.descendants.all? { |tree_node| subtree_obeys_disambiguation_rules?(token_stream, tree_node) }
+      end
+
+      def subtree_obeys_disambiguation_rules?(token_stream, parent_node)
+        subtree_obeys_priority_rules?(parent_node) && 
+        subtree_obeys_associativity_rules?(parent_node) &&
+        subtree_obeys_reject_rules?(token_stream, parent_node)
       end
       
       def subtree_obeys_priority_rules?(tree_root_node)
@@ -25,6 +35,29 @@ module Linguist
           end
         else
           true      # the tree_root_node represents a terminal symbol, so it is a valid parse tree (i.e. it is a leaf node)
+        end
+      end
+
+      # Rejects
+      # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.disambrejects
+      # Given non-terminal N and regular expression R, we tell the parser to reject
+      # any derivation N => S where S is a string that is derivable from the regular expression R.
+      # In other words, if S matches the regular expression R, then we prune the tree in which the derivation
+      # N => S exists.
+      def subtree_obeys_reject_rules?(token_stream, parent_node)
+        if parent_node.non_terminal?
+          derivation_string = token_stream[parent_node.start_index...parent_node.end_index].join()
+          (reject_rules[parent_node.production.non_terminal] || []).none? do |rejection_pattern|
+            value = if rejection_pattern.is_a? Regexp
+              derivation_string =~ rejection_pattern
+            else
+              derivation_string == rejection_pattern
+            end
+
+            value
+          end
+        else
+          true
         end
       end
     end

@@ -6,8 +6,6 @@ module Linguist
   # PracticalEarleyParser implements the Earley algorithm as described by Aycock and Horspool
   # in "Practical Earley Parsing" (http://webhome.cs.uvic.ca/~nigelh/Publications/PracticalEarleyParsing.pdf)
   class PracticalEarleyParser
-    include Disambiguation::TreeValidations
-
     attr_reader :grammar
     attr_reader :list
     attr_reader :token_stream
@@ -18,12 +16,8 @@ module Linguist
       reset
     end
 
-    def associativity_rules
-      grammar.associativity_rules
-    end
-
-    def priority_tree
-      grammar.priority_tree
+    def tree_validator
+      grammar.tree_validator
     end
   
     def reset
@@ -177,7 +171,7 @@ module Linguist
       # pp nodes
       # pp 'root nodes'
       # pp root_nodes
-      parse_forest = ParseForest.new(token_stream, nodes, root_nodes, associativity_rules, priority_tree)
+      parse_forest = ParseForest.new(token_stream, nodes, root_nodes, tree_validator)
       parse_forest.generate_node_alternatives!
       parse_forest
     end

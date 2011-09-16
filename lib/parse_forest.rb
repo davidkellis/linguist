@@ -66,8 +66,9 @@ module Linguist
         end
       end
 
-      def to_s
-        "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count})"
+      def to_s(spaces = 0)
+        (" " * spaces) + "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count})\n" +
+        children.map{|child| child.to_s(spaces + 2) }.join("\n")
       end
 
       def to_sexp
@@ -90,23 +91,22 @@ module Linguist
       def inspect
         to_s
       end
-      def to_s
-        "TerminalNode(#{object_id} value='#{value}' #{start_index} #{end_index})"
+      def to_s(spaces = 0)
+        " " * spaces + "TerminalNode(#{object_id} value='#{value}' #{start_index} #{end_index})"
       end
     end
 
 
     include Enumerable
-    include Disambiguation::TreeValidations
 
-    attr_accessor :associativity_rules, :priority_tree
+    attr_accessor :tree_validator
+    attr_reader :token_stream
 
-    def initialize(input_string, nodes, root_nodes, associativity_rules = nil, priority_tree = nil)
-      @input_string = input_string
+    def initialize(token_stream, nodes, root_nodes, tree_validator = nil)
+      @token_stream = token_stream
       @root_nodes = root_nodes
       @nodes = nodes
-      @associativity_rules = associativity_rules
-      @priority_tree = priority_tree
+      @tree_validator = tree_validator
 
       @nodes_by_start_index = @nodes.group_by {|node| node.start_index }
     end
@@ -141,7 +141,7 @@ module Linguist
           else
             new_pattern = pattern.clone
             character = new_pattern[term_index]
-            if @input_string[start_index] == character
+            if @token_stream[start_index] == character
               new_pattern[term_index] = TerminalNode.new(character, start_index, start_index + 1)
               [new_pattern]
             else    # the current alternative is invalid, so drop it by representing the current alternative as an empty alternative
@@ -152,7 +152,16 @@ module Linguist
       end
 
       # reject any derivations that don't end at the same character offset as the parent node's end_index
-      derivations = patterns.reject{|pattern| pattern.last.end_index != node.end_index }
+      derivations = patterns.reject do |pattern|
+        if pattern.empty?   # if the pattern is epsilon (i.e. the pattern has no terms):
+          # the epsilon (empty) pattern is an invalid alternative if the node doesn't represent the empty string.
+          node.start_index != node.end_index      # this node doesn't represent the empty string
+        else
+          # the pattern is an invalid alternative if the right-most child node doesn't end at the same index as the parent node's end_index
+          pattern.last.end_index != node.end_index
+        end
+      end
+
       derivations
     end
 
@@ -239,12 +248,11 @@ module Linguist
               end
 
               if node.non_terminal?
+                # select the next branch of the current node
                 node.select_next_branch!
-                or_nodes << node_pair if node.OR_node?
-              end
+                or_nodes << node_pair if node.OR_node?      # make a note of the current branch if the node is an OR-node (a node with multiple branches)
 
-              # we want to visit the node's children, so add them to the stack
-              if node.non_terminal?
+                # we want to visit the node's children, so add them to the stack
                 new_nodes = node.children
                 new_nodes.each(&:reset_next_branch!)    # reset them so that when they're visited, the call to select_next_branch! won't select a non-existent branch
                 new_pairs = new_nodes.reverse.map{|node| [node, next_node_index += 1] }
@@ -270,13 +278,13 @@ module Linguist
       if child_node.non_terminal? && child_node.is_rightmost_child?
         # puts 'checking tree for validity:'
         # puts child_node.parent.to_sexp
-        invalid = !subtree_obeys_disambiguation_rules?(child_node.parent)
-        # if invalid
+        valid = tree_validator.nil? || tree_validator.subtree_obeys_disambiguation_rules?(token_stream, child_node.parent)
+        # unless valid
         #   pp 'invalid'
         #   pp child_node.parent
         #   pp child_node
         # end
-        invalid
+        !valid
       end
     end
 

@@ -206,4 +206,48 @@ class DisambiguationTest < Test::Unit::TestCase
     assert parse_forest.count == 1
     assert_equal expected_parse_tree, parse_forest.first[0].to_sexp
   end
+
+  def test_reject_filter
+    g = Linguist::Grammar.new
+    g.production(:ID, g.plus(:CHAR))     # ID -> CHAR+
+    g.production(:CHAR, 'a')
+    g.production(:CHAR, 'b')
+    g.production(:CHAR, 'c')
+    g.start = :ID
+
+    # pp g.to_bnf
+
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+
+    # 1 trees
+    parse_forest = parser.parse("a")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("ab")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("abc")
+    assert parse_forest.count == 1
+
+    g.reject(:ID, "aaa")
+    g.reject(:ID, /c+/)
+
+    # 0 trees
+    parse_forest = parser.parse("aaa")
+    assert parse_forest.count == 0
+
+    # 0 trees
+    parse_forest = parser.parse("c")
+    assert parse_forest.count == 0
+    
+    # 0 trees
+    parse_forest = parser.parse("cc")
+    assert parse_forest.count == 0
+    
+    # 0 trees
+    parse_forest = parser.parse("ccc")
+    assert parse_forest.count == 0
+  end
 end

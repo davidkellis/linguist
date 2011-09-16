@@ -152,8 +152,10 @@ class ParseForestTest < Test::Unit::TestCase
 
     associativity_rules = {}
     associativity_rules[s__s_s] = Linguist::Disambiguation::IndividualAssociativityRule.new(:left, s__s_s)
+    tree_validator = Linguist::Disambiguation::TreeValidator.new
+    tree_validator.associativity_rules = associativity_rules
 
-    parse_forest = Linguist::ParseForest.new(input, nodes, [s_0_4], associativity_rules, nil)
+    parse_forest = Linguist::ParseForest.new(input.chars.to_a, nodes, [s_0_4], tree_validator)
 
     expected_parse_trees = [
       [:s, 

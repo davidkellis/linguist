@@ -79,7 +79,7 @@ module Linguist
     # Arguments:
     #   production1 > production2
     def prefer(production1, production2)
-      priority_tree.prefer(production1, production2)
+      tree_validator.priority_tree.prefer(production1, production2)
     end
     
     # Associativity
@@ -87,14 +87,25 @@ module Linguist
     # To indicate whether you want operators to associate to the left or to the right,
     #   the left and right attributes are available.
     def associate(direction, production)
-      associativity_rules[production] = Disambiguation::IndividualAssociativityRule.new(direction, production)
+      tree_validator.associativity_rules[production] = Disambiguation::IndividualAssociativityRule.new(direction, production)
     end
 
     def associate_equal_priority_group(direction, production_group)
       group_associativity_rule = Disambiguation::EqualPriorityGroupAssociativityRule.new(direction, Set.new(production_group))
       production_group.each do |production|
-        associativity_rules[production] = group_associativity_rule
+        tree_validator.associativity_rules[production] = group_associativity_rule
       end
+    end
+
+    # Rejects
+    # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.disambrejects
+    # Given non-terminal N and regular expression R, we tell the parser to reject
+    # any derivation N => S where S is a string that is derivable from the regular expression R.
+    # In other words, if S matches the regular expression R, then we prune the tree in which the derivation
+    # N => S exists.
+    def reject(non_terminal, regular_expression)
+      tree_validator.reject_rules[non_terminal] ||= []
+      tree_validator.reject_rules[non_terminal] << regular_expression
     end
   end
 
@@ -190,11 +201,12 @@ module Linguist
   # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
   # containing only terminals (characters) and non-terminals (symbols).
   class BNFGrammar
-    attr_accessor :start, :productions, :priority_tree, :associativity_rules
+    attr_accessor :start, :productions, :tree_validator
 
     def initialize
       @productions = {}
       @start = nil
+      @tree_validator = Disambiguation::TreeValidator.new
     end
 
     def non_terminals
@@ -236,7 +248,7 @@ module Linguist
   class Grammar
     include PatternBuilder
     
-    attr_accessor :start, :productions, :priority_tree, :associativity_rules
+    attr_accessor :start, :productions, :tree_validator
     
     def self.unique_non_terminal
       @id_count ||= 0
@@ -247,8 +259,7 @@ module Linguist
     def initialize(&block)
       @start = nil
       @productions = {}
-      @priority_tree = Disambiguation::PriorityTree.new
-      @associativity_rules = {}
+      @tree_validator = Disambiguation::TreeValidator.new
       instance_eval(&block) if block_given?
     end
     
@@ -268,8 +279,7 @@ module Linguist
         m
       end
       bnf_grammar.productions.merge!(tmp_productions)
-      bnf_grammar.priority_tree = priority_tree
-      bnf_grammar.associativity_rules = associativity_rules
+      bnf_grammar.tree_validator = tree_validator
       bnf_grammar
     end
     
