@@ -22,7 +22,7 @@ module Linguist
         elsif pattern.length == 1
           Grammar::Terminal.new(pattern)
         else
-          Grammar::Sequence.new(pattern.chars.map {|char| Terminal.new(char) })
+          Grammar::Sequence.new(pattern.chars.map {|char| Grammar::Terminal.new(char) })
         end
       when Symbol
         Grammar::NonTerminal.new(pattern)
@@ -83,8 +83,8 @@ module Linguist
     #   relative priorities between them.
     # Arguments:
     #   production1 > production2
-    def prefer(production1, production2)
-      tree_validator.priority_tree.prefer(production1, production2)
+    def prioritize(production1, production2)
+      tree_validator.priority_tree.prioritize(production1, production2)
     end
     
     # Associativity
@@ -118,6 +118,29 @@ module Linguist
         tree_validator.follow_restrictions[non_terminal] ||= []
         tree_validator.follow_restrictions[non_terminal] << regular_expression
       end
+    end
+
+    # Prefer/Preferences Disambiguation Filter
+    # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.disambpreferences
+    # Given production P, with the following alternatives:
+    # P -> if E then P
+    # P -> if E then P else P
+    # we need to be able to parse the sentence: "if blah1 then if blah2 then blah3 else blah4"
+    # and without preferring one of the alternatives, we don't know whether this sentence means:
+    # if blah1 then (if blah2 then blah3) else blah4
+    # OR
+    # if blah1 then (if blah2 then blah3 else blah4)
+    # By introducing a preference:
+    # P -> if E then P {prefer}
+    # we indicate that the interpretation "if blah1 then (if blah2 then blah3 else blah4)" is preferred
+    # over the interpretation "if blah1 then (if blah2 then blah3) else blah4".
+    def prefer(production)
+      tree_validator.preferred_productions[production.non_terminal] ||= []
+      tree_validator.preferred_productions[production.non_terminal] << production
+    end
+    def avoid(production)
+      tree_validator.avoided_productions[production.non_terminal] ||= []
+      tree_validator.avoided_productions[production.non_terminal] << production
     end
   end
 

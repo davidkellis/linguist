@@ -37,8 +37,8 @@ class DisambiguationTest < Test::Unit::TestCase
     parse_forest = parser.parse("5+6-3^2")
     assert parse_forest.count == 5
     
-    g.prefer(e_exp_e, e_plus_e)
-    g.prefer(e_exp_e, e_minus_e)
+    g.prioritize(e_exp_e, e_plus_e)
+    g.prioritize(e_exp_e, e_minus_e)
     g.associate_equal_priority_group(:left, [e_plus_e, e_minus_e])
     g.associate_equal_priority_group(:right, [e_exp_e])
     
@@ -100,12 +100,12 @@ class DisambiguationTest < Test::Unit::TestCase
     parse_forest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
     assert parse_forest.count == 132
 
-    g.prefer(e_exp_e, e_multiply_e)
-    g.prefer(e_exp_e, e_divide_e)
-    g.prefer(e_multiply_e, e_plus_e)
-    g.prefer(e_multiply_e, e_minus_e)
-    g.prefer(e_divide_e, e_plus_e)
-    g.prefer(e_divide_e, e_minus_e)
+    g.prioritize(e_exp_e, e_multiply_e)
+    g.prioritize(e_exp_e, e_divide_e)
+    g.prioritize(e_multiply_e, e_plus_e)
+    g.prioritize(e_multiply_e, e_minus_e)
+    g.prioritize(e_divide_e, e_plus_e)
+    g.prioritize(e_divide_e, e_minus_e)
     
     # addition and subtraction are left associative but they are the same priority, so we group them together
     g.associate_equal_priority_group(:left, [e_plus_e, e_minus_e])
@@ -337,5 +337,121 @@ class DisambiguationTest < Test::Unit::TestCase
     # 1 trees
     parse_forest = parser.parse("cc")
     assert parse_forest.count == 1
+  end
+
+  def test_prefer_disambiguation_rule
+    g = Linguist::Grammar.new
+    # TERM -> 'if' COND 'then' TERM
+    if_then = g.production(:TERM, g.seq(:IF, :SPACE, :E, :SPACE, :THEN, :SPACE, :E))
+    # TERM -> 'if' COND 'then' TERM 'else' TERM
+    if_then_else = g.production(:TERM, g.seq(:IF, :SPACE, :E, :SPACE, :THEN, :SPACE, :E, :SPACE, :ELSE, :SPACE, :E))
+    # E -> 'expr' | TERM
+    g.production(:E, g.seq('expr'))
+    g.production(:E, :TERM)
+    g.production(:IF, 'if')
+    g.production(:THEN, 'then')
+    g.production(:ELSE, 'else')
+    g.production(:SPACE, ' ')
+    g.start = :TERM
+
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+
+    # 1 tree
+    parse_forest = parser.parse("if expr then expr")
+    assert parse_forest.count == 1
+
+    # 1 tree
+    parse_forest = parser.parse("if expr then expr else expr")
+    assert parse_forest.count == 1
+
+    # 2 trees
+    # -> if expr then (if expr then expr) else expr
+    # -> if expr then (if expr then expr else expr)
+    expected_parse_trees = [
+      [:TERM,
+        [:IF, "i", "f"],
+        [:SPACE, " "],
+        [:E, "e", "x", "p", "r"],
+        [:SPACE, " "],
+        [:THEN, "t", "h", "e", "n"],
+        [:SPACE, " "],
+        [:E,
+          [:TERM,
+            [:IF, "i", "f"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"],
+            [:SPACE, " "],
+            [:THEN, "t", "h", "e", "n"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"]]],
+        [:SPACE, " "],
+        [:ELSE, "e", "l", "s", "e"],
+        [:SPACE, " "],
+        [:E, "e", "x", "p", "r"]],
+      [:TERM,
+        [:IF, "i", "f"],
+        [:SPACE, " "],
+        [:E, "e", "x", "p", "r"],
+        [:SPACE, " "],
+        [:THEN, "t", "h", "e", "n"],
+        [:SPACE, " "],
+        [:E,
+          [:TERM,
+            [:IF, "i", "f"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"],
+            [:SPACE, " "],
+            [:THEN, "t", "h", "e", "n"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"],
+            [:SPACE, " "],
+            [:ELSE, "e", "l", "s", "e"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"]]]]
+    ]
+    parse_forest = parser.parse("if expr then if expr then expr else expr")
+    assert parse_forest.count == 2
+    parse_trees = parse_forest.trees.map(&:to_sexp)
+    assert_equal expected_parse_trees, parse_trees
+
+    # add the prefer restriction
+    g.prefer(if_then)
+
+    # 1 tree
+    parse_forest = parser.parse("if expr then expr")
+    assert parse_forest.count == 1
+
+    # 1 tree
+    parse_forest = parser.parse("if expr then expr else expr")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    # -> if expr then (if expr then expr else expr)
+    expected_parse_trees = [
+      [:TERM,
+        [:IF, "i", "f"],
+        [:SPACE, " "],
+        [:E, "e", "x", "p", "r"],
+        [:SPACE, " "],
+        [:THEN, "t", "h", "e", "n"],
+        [:SPACE, " "],
+        [:E,
+          [:TERM,
+            [:IF, "i", "f"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"],
+            [:SPACE, " "],
+            [:THEN, "t", "h", "e", "n"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"],
+            [:SPACE, " "],
+            [:ELSE, "e", "l", "s", "e"],
+            [:SPACE, " "],
+            [:E, "e", "x", "p", "r"]]]]
+    ]
+    parse_forest = parser.parse("if expr then if expr then expr else expr")
+    assert parse_forest.count == 1
+    parse_trees = parse_forest.trees.map(&:to_sexp)
+    assert_equal expected_parse_trees, parse_trees
   end
 end

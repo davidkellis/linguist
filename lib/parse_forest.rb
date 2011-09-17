@@ -68,7 +68,7 @@ module Linguist
 
       def to_s(spaces = 0)
         (" " * spaces) + "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count})\n" +
-        children.map{|child| child.to_s(spaces + 2) }.join("\n")
+        (children || []).map{|child| child.to_s(spaces + 2) }.join("\n")
       end
 
       def to_sexp
@@ -111,7 +111,7 @@ module Linguist
       @token_stream = token_stream
       @root_nodes = root_nodes
       @nodes = nodes
-      @tree_validator = tree_validator
+      @tree_validator = tree_validator || Disambiguation::TreeValidator.new
 
       @nodes_by_start_index = @nodes.group_by {|node| node.start_index }
     end
@@ -120,9 +120,20 @@ module Linguist
     # this is the equivalent of generating a parse forest grammar using the given nodes
     # this is also the equivalent of building a DAG representing the parse forest
     def generate_node_alternatives!
+      select_preferred_and_non_avoided_nodes!    # this enforces any prefer/avoid disambiguation rules
+
+      # pp @nodes
+
       @nodes.each do |node|
         node.alternatives = generate_alternatives(node)
       end
+    end
+
+    def select_preferred_and_non_avoided_nodes!
+      @nodes = tree_validator.select_preferred_and_non_avoided_nodes(@nodes)
+      # if any of the root_nodes are one of the nodes that were rejected by the prefer/avoid disambiguation rules,
+      # then we need to manually remove the root node(s) that were rejected.
+      @root_nodes = @root_nodes.select{|root_node| @nodes.include?(root_node) }
     end
 
     def generate_alternatives(node)

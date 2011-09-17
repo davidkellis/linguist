@@ -1,13 +1,20 @@
 module Linguist
   module Disambiguation
     class TreeValidator
-      attr_accessor :associativity_rules, :priority_tree, :reject_rules, :follow_restrictions
+      attr_accessor :associativity_rules, 
+                    :priority_tree, 
+                    :reject_rules, 
+                    :follow_restrictions, 
+                    :preferred_productions,
+                    :avoided_productions
 
       def initialize()
         @associativity_rules = {}
         @priority_tree = PriorityTree.new
         @reject_rules = {}
         @follow_restrictions = {}
+        @preferred_productions = {}
+        @avoided_productions = {}
       end
 
       def tree_obeys_disambiguation_rules?(token_stream, tree_root_node)
@@ -99,6 +106,68 @@ module Linguist
         end
       end
 
+      # this method returns the subset of the given nodes that have a production that is either preferred
+      # or non-avoided.
+      def select_preferred_and_non_avoided_nodes(nodes)
+        node_groups = group_nodes_by_non_terminal_then_by_indices(nodes)
+
+        node_groups.map do |non_terminal, node_group|
+          prefer_productions = preferred_productions[non_terminal]
+          avoid_productions = avoided_productions[non_terminal]
+
+          node_group.map do |index_pair, node_array|
+            # If an array of nodes has more than one node in it, we observe that the nodes are competing.
+            # We filter out any nodes that are supposed to be avoided (if applicable).
+            # Of the remaining nodes, we filter out any that aren't preferred (if applicable).
+            # If an array of nodes only has one node in it, then we do not perform filtering on it.
+            if node_array.length > 1
+              # First, we apply the avoid-filtering rules
+              non_avoided_nodes = node_array
+              if avoid_productions
+                # filter out any nodes with avoided productions
+                non_avoided_nodes = node_array.reject {|node| avoid_productions.include?(node.production) }
+
+                # if filtering out the nodes with avoided productions removes all nodes,
+                # then put all the nodes back, and proceed as if none of the nodes are flagged to be avoided
+                non_avoided_nodes = node_array if non_avoided_nodes.empty?
+              end
+
+              # Second, we apply the prefer-filtering rules
+              preferred_nodes = non_avoided_nodes
+              if prefer_productions
+                # of the remaining nodes that weren't filtered out by the avoid-filtering,
+                # select only the the nodes with preferred productions
+                preferred_nodes = non_avoided_nodes.select {|node| prefer_productions.include?(node.production) }
+
+                # if filtering out the non-preferred nodes removes all nodes,
+                # then put all the non_avoided_nodes back, and proceed as if all of the non-avoided nodes are flagged as preferred
+                preferred_nodes = non_avoided_nodes if preferred_nodes.empty?
+              end
+
+              preferred_nodes
+            else
+              node_array
+            end
+          end
+        end.flatten
+      end
+
+      # Given a set of nodes, this method groups them by non-terminal and [start_index, end_index] pair
+      # and returns a structure of the form:
+      # {
+      #   :NONTERMINAL1 => {[start_index1, end_index1] => [node_with_start_index1_and_end_index1,
+      #                                                    another_node_with_start_index1_and_end_index1],
+      #                     [start_index2, end_index2] => [node_with_start_index2_and_end_index2]},
+      #   :NONTERMINAL2 => {[start_index3, end_index3] => [node_with_start_index3_and_end_index3]}
+      # }
+      # In other words, the method gruops the nodes by their non-terminal first, then within each group,
+      # groups the nodes by their [start_index, end_index] pair.
+      def group_nodes_by_non_terminal_then_by_indices(nodes)
+        node_groups_per_non_terminal = nodes.group_by {|node| node.production.non_terminal }
+        node_groups_per_non_terminal.merge(node_groups_per_non_terminal) do |non_terminal, node_array, newval|
+          node_array.group_by {|node| [node.start_index, node.end_index] }
+        end
+      end
     end
 
     # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.priorities
@@ -109,9 +178,9 @@ module Linguist
         @priority_relations = Hash.new
       end
     
-      # prefer greater_production over lesser_production
+      # prioritize greater_production over lesser_production (so that greater_production takes priority over lesser_production)
       # That is, greater_production > lesser_production
-      def prefer(greater_production, lesser_production)
+      def prioritize(greater_production, lesser_production)
         greater_production_node = (@priority_relations[greater_production] ||= PriorityNode.new(greater_production))
         lesser_production_node = (@priority_relations[lesser_production] ||= PriorityNode.new(lesser_production))
         greater_production_node.children << lesser_production_node

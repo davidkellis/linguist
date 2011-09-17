@@ -152,6 +152,7 @@ module Linguist
       list.map{|item_set| item_set.select{|item| item.right_pattern.empty? }.to_set }
     end
 
+    # returns an array of ParseForest::Node objects
     def tree_nodes
       node_sets = completed_list.map.with_index do |item_set, index|
         item_set.map do |item|
