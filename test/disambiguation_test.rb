@@ -250,4 +250,92 @@ class DisambiguationTest < Test::Unit::TestCase
     parse_forest = parser.parse("ccc")
     assert parse_forest.count == 0
   end
+
+  def test_follow_restriction_filter
+    g = Linguist::Grammar.new
+    g.production(:ID, g.plus(:CHAR))     # ID -> CHAR+
+    g.production(:CHAR, 'a')
+    g.production(:CHAR, 'b')
+    g.production(:CHAR, 'c')
+    g.start = :ID
+
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+
+
+    # 1 trees
+    parse_forest = parser.parse("abc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("bbc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("cbc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("acc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("bcc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("ccc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("ac")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("bc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("cc")
+    assert parse_forest.count == 1
+
+    # add the follow restrictions
+    g.add_follow_restriction(['a', 'b'], /bc/)
+    g.add_follow_restriction([:CHAR], /cc/)
+
+    # 0 trees
+    parse_forest = parser.parse("abc")
+    assert parse_forest.count == 0
+
+    # 0 trees
+    parse_forest = parser.parse("bbc")
+    assert parse_forest.count == 0
+
+    # 1 trees
+    parse_forest = parser.parse("cbc")
+    assert parse_forest.count == 1
+
+    # 0 trees
+    parse_forest = parser.parse("acc")
+    assert parse_forest.count == 0
+
+    # 0 trees
+    parse_forest = parser.parse("bcc")
+    assert parse_forest.count == 0
+
+    # 0 trees
+    parse_forest = parser.parse("ccc")
+    assert parse_forest.count == 0
+
+    # 1 trees
+    parse_forest = parser.parse("ac")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("bc")
+    assert parse_forest.count == 1
+
+    # 1 trees
+    parse_forest = parser.parse("cc")
+    assert parse_forest.count == 1
+  end
 end

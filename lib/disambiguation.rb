@@ -1,12 +1,13 @@
 module Linguist
   module Disambiguation
     class TreeValidator
-      attr_accessor :associativity_rules, :priority_tree, :reject_rules
+      attr_accessor :associativity_rules, :priority_tree, :reject_rules, :follow_restrictions
 
       def initialize()
         @associativity_rules = {}
         @priority_tree = PriorityTree.new
         @reject_rules = {}
+        @follow_restrictions = {}
       end
 
       def tree_obeys_disambiguation_rules?(token_stream, tree_root_node)
@@ -16,16 +17,15 @@ module Linguist
       def subtree_obeys_disambiguation_rules?(token_stream, parent_node)
         subtree_obeys_priority_rules?(parent_node) && 
         subtree_obeys_associativity_rules?(parent_node) &&
-        subtree_obeys_reject_rules?(token_stream, parent_node)
+        subtree_obeys_reject_rules?(token_stream, parent_node) &&
+        subtree_obeys_follow_restrictions?(token_stream, parent_node)
       end
       
       def subtree_obeys_priority_rules?(tree_root_node)
-        return true if priority_tree.nil?
         priority_tree.is_parse_tree_valid?(tree_root_node)
       end
       
       def subtree_obeys_associativity_rules?(tree_root_node)
-        return true if associativity_rules.nil?
         if tree_root_node.non_terminal?
           if associativity_rules.include?(tree_root_node.production)
             associativity_rule = associativity_rules[tree_root_node.production]
@@ -48,18 +48,57 @@ module Linguist
         if parent_node.non_terminal?
           derivation_string = token_stream[parent_node.start_index...parent_node.end_index].join()
           (reject_rules[parent_node.production.non_terminal] || []).none? do |rejection_pattern|
-            value = if rejection_pattern.is_a? Regexp
+            if rejection_pattern.is_a? Regexp
               derivation_string =~ rejection_pattern
             else
               derivation_string == rejection_pattern
             end
-
-            value
           end
         else
           true
         end
       end
+
+      # Follow Restrictions
+      # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.restrictions
+      # Given non-terminal N and regular expression R, we tell the parser to reject
+      # any derivation N => S  (where S is a substring of the input being parsed) such that S is immediately followed
+      # by X, a string that is derivable from the regular expression R.
+      # In other words, if N derives string S, and S is followed by substring X, and X matches the regular expression R, 
+      # then we prune the tree in which the derivation N => S exists.
+      def subtree_obeys_follow_restrictions?(token_stream, parent_node)
+        if parent_node.non_terminal?
+          follow_string_scanner = StringScanner.new(token_stream[parent_node.end_index..-1].join())
+          derivation_string = token_stream[parent_node.start_index...parent_node.end_index].join()
+
+          # since follow restriction rules can be of the form:
+          # NON_TERMINAL1, ID, NUM -/- /[a-z]/
+          # OR
+          # 'terminal_string', 'break', 'return', 'if' -/- /[a-z]/
+          # we need to look up rejection patterns associated with either 
+          # a non-terminal or a terminal string literal associated with the current parent_node
+          rejection_patterns = (follow_restrictions[parent_node.production.non_terminal] || []) +
+                               (follow_restrictions[derivation_string] || [])
+
+          # if any of the rejection patterns match at the beginning of the follow string, 
+          # then the derivation N => S is invalid, and the tree in which it exists should be discarded.
+          rejection_patterns.none? { |rejection_pattern| follow_string_scanner.check(rejection_pattern) }
+        else
+          # we're dealing with a terminal node, I'm pretty sure this code should never be reached
+          # because I only only validate nodes that have children
+          raise "I don't think this code will ever be reached."
+          
+          follow_string_scanner = StringScanner.new(token_stream[parent_node.end_index..-1].join())
+          derivation_string = token_stream[parent_node.start_index...parent_node.end_index].join()
+
+          rejection_patterns = (follow_restrictions[derivation_string] || [])
+
+          # if any of the rejection patterns match at the beginning of the follow string, 
+          # then the derivation N => S is invalid, and the tree in which it exists should be discarded.
+          rejection_patterns.none? { |rejection_pattern| follow_string_scanner.check(rejection_pattern) }
+        end
+      end
+
     end
 
     # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.priorities

@@ -2,6 +2,7 @@
 
 require 'set'
 require 'pp'
+require 'strscan'
 require 'structures'
 require 'disambiguation'
 require 'parse_forest'
@@ -57,6 +58,10 @@ module Linguist
     end
     alias_method :star, :kleene
     
+    # returns a non terminal representing the productions:
+    # NT1 -> epsilon
+    # NT1 -> pattern NT1
+    # NT2 -> pattern NT1
     def plus(pattern)
       seq(pattern, kleene(pattern))
     end
@@ -103,9 +108,16 @@ module Linguist
     # any derivation N => S where S is a string that is derivable from the regular expression R.
     # In other words, if S matches the regular expression R, then we prune the tree in which the derivation
     # N => S exists.
-    def reject(non_terminal, regular_expression)
+    def reject(non_terminal, regular_expression_or_string_literal)
       tree_validator.reject_rules[non_terminal] ||= []
-      tree_validator.reject_rules[non_terminal] << regular_expression
+      tree_validator.reject_rules[non_terminal] << regular_expression_or_string_literal
+    end
+
+    def add_follow_restriction(non_terminals, regular_expression)
+      non_terminals.each do |non_terminal|
+        tree_validator.follow_restrictions[non_terminal] ||= []
+        tree_validator.follow_restrictions[non_terminal] << regular_expression
+      end
     end
   end
 

@@ -88,6 +88,11 @@ module Linguist
       def non_terminal?; false; end
       def to_sexp; value; end
       def reset_next_branch!; end
+      def is_rightmost_child?
+        if parent
+          parent.children.last == self       # this node is the rightmost child of the parent
+        end
+      end
       def inspect
         to_s
       end
@@ -275,7 +280,7 @@ module Linguist
     end
 
     def branch_is_invalid?(child_node)
-      if child_node.non_terminal? && child_node.is_rightmost_child?
+      if child_node.is_rightmost_child?
         # puts 'checking tree for validity:'
         # puts child_node.parent.to_sexp
         valid = tree_validator.nil? || tree_validator.subtree_obeys_disambiguation_rules?(token_stream, child_node.parent)
