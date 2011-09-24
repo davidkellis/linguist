@@ -71,11 +71,25 @@ module Linguist
         (children || []).map{|child| child.to_s(spaces + 2) }.join("\n")
       end
 
+      def text
+        (children || []).map{|child| child.text }.join("")
+      end
+
       def to_sexp
         if children.empty?
           value
         else
           [value] + children.map(&:to_sexp)
+        end
+      end
+
+      # implements a depth-first traversal of the nodes rooted at the current node
+      def traverse(&blk)
+        stack = [self]
+        until stack.empty?
+          node = stack.pop
+          blk.call(node)
+          stack.concat(node.children.reverse) if node.is_a?(Node)
         end
       end
     end
@@ -98,6 +112,9 @@ module Linguist
       end
       def to_s(spaces = 0)
         " " * spaces + "TerminalNode(#{object_id} value='#{value}' #{start_index} #{end_index})"
+      end
+      def text
+        value
       end
     end
 
@@ -312,6 +329,26 @@ module Linguist
     def trees
       Enumerator.new() do |yielder|
         to_enum.map {|tree, or_nodes| yielder.yield(tree) }
+      end
+    end
+
+    def annotated_parse_tree(semantic_actions)
+      if to_enum.count == 1
+        root_node, selected_branches = to_enum.first
+
+        # pp semantic_actions
+
+        root_node.traverse do |node|
+          if node.is_a?(Node)
+            modules = semantic_actions[node.production]
+            modules.each do |mod|
+              # puts "semantic_actions[#{node.production}] -> #{mod.inspect}"
+              node.extend(mod) if mod
+            end
+          end
+        end
+
+        root_node
       end
     end
   end

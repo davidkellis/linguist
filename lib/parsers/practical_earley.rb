@@ -104,7 +104,7 @@ module Linguist
     def scan(token, item, destination_position)
       # if item is of the form [A -> ...•token..., j], then we add [A -> ...token•..., j] to list[destination_position]
       if item.right_pattern.first == token ||       # we just saw token in the token stream
-         item.right_pattern.first == Pattern::DOT   # this matches the ANY/DOT token in the token stream
+         item.right_pattern.first == Grammar::Pattern::DOT   # this matches the ANY/DOT token in the token stream
         # the part before the • was already recognized and now token is recognized;
         # consequently, the Scanner changes •σ into σ•
         new_item = Item.new(item.non_terminal,
