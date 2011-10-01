@@ -5,11 +5,11 @@ require "linguist"
 class AmbiguityTest < Test::Unit::TestCase
   def test_ambiguous_grammar
     # S -> S S | 'a'
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, seq(:s, :s))
       production(:s, 'a')
     end
-    
+
     parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
     
     assert parser.match?("aaaa")

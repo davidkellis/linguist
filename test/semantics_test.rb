@@ -49,7 +49,7 @@ class SemanticsTest < Test::Unit::TestCase
       e_multiply_e = production(:E, seq(label(:E, :lhs), '*', label(:E, :rhs)))
       e_divide_e = production(:E, seq(label(:E, :lhs), '/', label(:E, :rhs)))
       e_n = production(:E, :N)
-      production(:N, '0'..'9')
+      production(:N, ('0'..'9').to_a)
 
       # semantic actions
       bind(e_plus_e, mod_e_plus_e)
@@ -74,10 +74,11 @@ class SemanticsTest < Test::Unit::TestCase
 
     parser = Linguist::PracticalEarleyEpsilonParser.new(calculator_grammar.to_bnf)
     
-    assert parser.match?("1+2-3+4*5-6*7+8*8+9")
-    parse_forest = parser.parse("1+2-3+4*5-6*7+8*8+9")
+    # for a 15 term expression like the following, there are CatalanNumber[15] = 9694845 possible parse trees
+    assert parser.match?("1+2-3+4*5-6*7+8*8+9-3*5-8/2+3")
+    parse_forest = parser.parse("1+2-3+4*5-6*7+8*8+9-3*5-8/2+3")
     assert_equal 1, parse_forest.count
     tree = parse_forest.annotated_parse_tree(calculator_grammar.semantic_actions)
-    assert_equal 51, tree.eval
+    assert_equal 35, tree.eval
   end
 end

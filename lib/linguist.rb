@@ -61,13 +61,16 @@ module Linguist
   #   G = (V, E, P, S)
   #   where
   #   V is a finite set of non-terminals.
-  #   E is a finite set of terminals, disjoint from V.
+  #   E is a finite set of terminals, disjoint from V. This is the alphabet of the language defined by the grammar.
   #   P is a finite set of productions.
   #   S is the start symbol representing the non-terminal from which the grammar derives sentences.
   class Grammar
     include PatternBuilder
+
+    DEFAULT_ALPHABET = (0..127).to_a.map(&:chr)     # ASCII 0-127. Make them UTF-8 by calling int.chr(Encoding::UTF_8)
     
     attr_accessor :start, :productions, :tree_validator, :semantic_actions, :production_pattern_labels
+    attr_reader :alphabet
     
     def self.unique_non_terminal
       @id_count ||= 0
@@ -75,13 +78,22 @@ module Linguist
       "__NT_#{@id_count}__".to_sym
     end
     
-    def initialize(start_non_terminal = nil, &block)
+    # alphabet is an optional array of characters representing the terminal symbols (alphabet) of the language
+    def initialize(start_non_terminal = nil, alphabet = nil, &block)
       @start = start_non_terminal
       @productions = {}
       @tree_validator = Disambiguation::TreeValidator.new
       @semantic_actions = {}
       @production_pattern_labels = {}
+      self.alphabet = alphabet || DEFAULT_ALPHABET
       instance_eval(&block) if block_given?
+    end
+
+    def alphabet=(alphabet)
+      @productions.reject!{|prod| @dot_productions.include?(prod) }
+      @alphabet = alphabet
+      @dot = Grammar.unique_non_terminal
+      @dot_productions = production(@dot, @alphabet)
     end
     
     def to_bnf
@@ -105,18 +117,30 @@ module Linguist
     # Associates the production with the given module
     # When a parse tree is constructed, the tree nodes that represent the given production will
     # be extended with the given semantic_actions_modules.
-    # Returns the given production.
-    def bind(production, semantic_actions_module)
-      if production.is_a? Array
-        production.each{|p| bind(p, semantic_actions_module) }
+    # Returns the given production or array of productions.
+    def bind(production_or_production_array, semantic_actions_module)
+      if production_or_production_array.is_a? Array
+        production_or_production_array.each{|p| bind(p, semantic_actions_module) }
       else
-        semantic_actions[production] ||= []
-        semantic_actions[production] << semantic_actions_module
+        semantic_actions[production_or_production_array] ||= []
+        semantic_actions[production_or_production_array] << semantic_actions_module
       end
-      production
+      production_or_production_array
     end
 
     # Create a production
+    # When pattern is an Array, ['a', 'b', 'c'], it represents a set of alternatives, each of which
+    #   is a terminal and derivable directly from the given non-terminal, name. The return value is
+    #   an array of Production objects.
+    # When the pattern is other pattern object, the return value is a single Production object.
+    # For example,
+    # production(:N, ['1', '2', '3'])
+    #  => [ Production(:non_terminal => :N, :pattern => ['1']),
+    #       Production(:non_terminal => :N, :pattern => ['2']),
+    #       Production(:non_terminal => :N, :pattern => ['3']) ]
+    #
+    # production(:E, seq(:E, '+', :E))
+    #  => Production(:non_terminal => :N, :pattern => [:E, '+', :E])
     def production(name, pattern)
       sym = name.to_sym
       
@@ -127,20 +151,13 @@ module Linguist
       productions[sym] ||= []
 
       case pattern
-      # Range is a special case - it represents an array of productions
+      # Array is a special case - it represents an array of productions each of which immediately derives a terminal
       # If differs from the logic in PatternBuilder#wrap in that we don't want to generate a new
       # non-terminal - we want the productions to derive directly from the given non-terminal, name,
-      # instead of indirectly through a generated non-terminal, __NT_5__.
-      when Range
-        chars = pattern.to_a.map(&:to_s)
-        if chars.length == 0
-          raise "A range must have one or more characters in it."
-        elsif chars.count == 1
-          production(name, chars.first)
-        else
-          chars.map do |char|
-            production(name, char)
-          end
+      # instead of indirectly through a generated non-terminal (e.g. __NT_5__).
+      when Array        # Array represents a set of terminals, each of which is an alternative
+        pattern.map do |terminal|
+          production(name, terminal)
         end
       else
         # productions[sym] is a set of pattern sequences representing one of the following Pattern types:
@@ -244,7 +261,7 @@ module Linguist
 end
 
 class Object
-  def grammar(&block)
-    Linguist::Grammar.new(&block)
+  def grammar(start_non_terminal = nil, &block)
+    Linguist::Grammar.new(start_non_terminal, &block)
   end
 end

@@ -2,19 +2,12 @@ module Linguist
   module PatternBuilder
     def wrap(pattern)
       case pattern
-      when Range        # Range represents a character class (i.e. character alternatives)
-        chars = pattern.to_a.map(:to_s)
-        if chars.length == 0
-          raise "A range must have one or more characters in it."
-        elsif chars.count == 1
-          Grammar::Terminal.new(chars.first)
-        else
-          new_character_range_non_terminal = Grammar.unique_non_terminal
-          chars.each do |char|
-            production(new_character_range_non_terminal, char)
-          end
-          new_character_range_non_terminal
+      when Array        # an Array represents a set of right-hand-side alternatives
+        new_non_terminal = Grammar.unique_non_terminal
+        pattern.each do |terminal|
+          production(new_non_terminal, terminal)
         end
+        Grammar::NonTerminal.new(new_non_terminal)
       when String       # String represents a sequence of characters
         if pattern.length == 0
           raise "A quoted string must have one or more characters in it."
@@ -35,9 +28,10 @@ module Linguist
       Grammar::Epsilon.new
     end
     
-    # Creates a new pattern (dot/any operator) that will match any single character.
+    # returns a non-terminal (dot/any operator) that will match any single character.
+    # __NT_#__ -> 'a' | 'b' | ... | 'z' | 'A' | ... | 'Z'
     def dot
-      Grammar::Dot.new
+      @dot
     end
     alias_method :any, :dot
     
@@ -45,6 +39,13 @@ module Linguist
     def seq(*args)
       Grammar::Sequence.new(args)
     end
+
+    # # Creates a new non-terminal that derives each of the alternatives
+    # def alt(*alternatives)
+    #   new_non_terminal = Grammar.unique_non_terminal
+    #   alternatives.each{|alt_pattern| production(new_non_terminal, alt_pattern) }
+    #   new_non_terminal
+    # end
 
     def label(pattern, label_name)
       pattern = wrap(pattern)
@@ -85,7 +86,6 @@ module Linguist
   class Grammar
     class Pattern
       EPSILON = :__epsilon__
-      DOT = Object.new
       
       include PatternBuilder
 
@@ -112,12 +112,6 @@ module Linguist
       end
     end
 
-    class Dot < Pattern
-      def initialize
-        @pattern = DOT
-      end
-    end
-    
     class Epsilon < Pattern
       def initialize
         @pattern = EPSILON

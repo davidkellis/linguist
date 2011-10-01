@@ -5,7 +5,7 @@ require "linguist"
 class RecognitionTest < Test::Unit::TestCase
   def test_language1
     # S -> 'a' S | 'b'
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, seq('a', :s))
       production(:s, 'b')
     end
@@ -20,7 +20,7 @@ class RecognitionTest < Test::Unit::TestCase
     # S -> S B | A
     # A -> 'a'
     # B -> 'b'
-    grammar = grammar {
+    grammar = grammar(:s) {
       production(:s, seq(:s, :b))
       production(:s, :a)
       production(:a, 'a')
@@ -38,7 +38,7 @@ class RecognitionTest < Test::Unit::TestCase
     # T -> S B
     # A -> 'a'
     # B -> 'b'
-    grammar = grammar {
+    grammar = grammar(:s) {
       production(:s, :t)
       production(:s, :a)
       production(:t, seq(:s, :b))

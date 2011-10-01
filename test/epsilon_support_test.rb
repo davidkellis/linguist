@@ -5,7 +5,7 @@ require "linguist"
 class RecognitionTest < Test::Unit::TestCase
   def test_kleene_star
     # S -> 'a'*
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, kleene('a'))
     end
     
@@ -20,7 +20,7 @@ class RecognitionTest < Test::Unit::TestCase
 
   def test_optional
     # S -> 'a'*
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, optional('a'))
     end
     

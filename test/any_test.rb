@@ -5,7 +5,7 @@ require "linguist"
 class AnyTest < Test::Unit::TestCase
   def test_dot
     # S -> x.z
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, seq('x', dot, 'z'))
     end
     
@@ -21,7 +21,7 @@ class AnyTest < Test::Unit::TestCase
 
   def test_dot_kleene
     # S -> .*
-    grammar = Linguist::Grammar.new do
+    grammar = Linguist::Grammar.new(:s) do
       production(:s, kleene(dot))
     end
     

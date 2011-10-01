@@ -103,8 +103,7 @@ module Linguist
     # SCANNER. If [A → ...•a..., j] is in S[i] and a=x[i+1], add [A → ...a•..., j] to S[i+1].
     def scan(token, item, destination_position)
       # if item is of the form [A -> ...•token..., j], then we add [A -> ...token•..., j] to list[destination_position]
-      if item.right_pattern.first == token ||       # we just saw token in the token stream
-         item.right_pattern.first == Grammar::Pattern::DOT   # this matches the ANY/DOT token in the token stream
+      if item.right_pattern.first == token       # we just saw token in the token stream
         # the part before the • was already recognized and now token is recognized;
         # consequently, the Scanner changes •σ into σ•
         new_item = Item.new(item.non_terminal,
@@ -121,7 +120,7 @@ module Linguist
     # This implements the following rule from Practical Earley Parsing:
     # PREDICTOR. If [A → ...•B..., j] is in S[i], add [B → •α, i] to S[i] for all productions/rules B→α.
     def predict(item, position)
-      # NOTE: A non-terminal is predicted by an item if the token to the right of the DOT is a non-terminal.
+      # NOTE: A non-terminal is predicted by an item if the token to the right of the dot is a non-terminal.
       # if item is of the form [A -> ...•B..., position] (where B is a non-terminal)...
       predicted_token = item.right_pattern.first
       if predicted_token.is_a?(Symbol)
@@ -184,7 +183,7 @@ module Linguist
     # PREDICTOR. If [A → ...•B..., j] is in S[i], add [B → •α, i] to S[i] for all productions/rules B→α.
     #            If B is nullable, also add [A → ...B•..., j] to S[i].
     def predict(item, position)
-      # NOTE: A non-terminal is predicted by an item if the token to the right of the DOT is a non-terminal.
+      # NOTE: A non-terminal is predicted by an item if the token to the right of the dot is a non-terminal.
       # if item is of the form [A -> ...•B..., position] (where B is a non-terminal)...
       predicted_token = item.right_pattern.first
       if predicted_token.is_a?(Symbol)

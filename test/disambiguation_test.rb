@@ -7,7 +7,7 @@ require "linguist"
 
 class DisambiguationTest < Test::Unit::TestCase
   def test_disambiguation_filters
-    g = Linguist::Grammar.new
+    g = Linguist::Grammar.new(:E)
     e_plus_e = g.production(:E, g.seq(:E, '+', :E))
     e_minus_e = g.production(:E, g.seq(:E, '-', :E))
     e_exp_e = g.production(:E, g.seq(:E, '^', :E))
@@ -56,7 +56,7 @@ class DisambiguationTest < Test::Unit::TestCase
   end
 
   def test_disambiguated_tree
-    g = Linguist::Grammar.new
+    g = Linguist::Grammar.new(:E)
     e_multiply_e = g.production(:E, g.seq(:E, '*', :E))
     e_divide_e = g.production(:E, g.seq(:E, '/', :E))
     e_plus_e = g.production(:E, g.seq(:E, '+', :E))
