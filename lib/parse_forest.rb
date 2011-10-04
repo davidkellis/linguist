@@ -67,7 +67,7 @@ module Linguist
       end
 
       def to_s(spaces = 0)
-        (" " * spaces) + "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count})\n" +
+        (" " * spaces) + "Node(#{object_id} #{production} #{start_index} #{end_index} OR_node?=#{OR_node?} rightmost?=#{is_rightmost_child?} have_parent?=#{!parent.nil?} branch=#{@branch_index} #branches=#{branch_count} branches=#{@alternatives.map{|children| '[' + children.map(&:object_id).join(' ') + ']' }.join(', ') })\n" +
         (children || []).map{|child| child.to_s(spaces + 2) }.join("\n")
       end
 
@@ -139,11 +139,11 @@ module Linguist
     def generate_node_alternatives!
       select_preferred_and_non_avoided_nodes!    # this enforces any prefer/avoid disambiguation rules
 
-      # pp @nodes
-
       @nodes.each do |node|
         node.alternatives = generate_alternatives(node)
       end
+
+      # pp @nodes
     end
 
     def select_preferred_and_non_avoided_nodes!
@@ -239,59 +239,9 @@ module Linguist
           or_nodes = []
 
           begin
-            tree_modified = false
+            next_node_index, nodes, or_nodes = backtrack(next_node_index, nodes, or_nodes)
 
-            # this implements backtracking logic
-            # every pop of an or_node is a search for the next branch point
-            until or_nodes.empty?
-              or_node, or_node_index = or_nodes.pop
-              # puts "PROCESSING OR node: #{or_node.inspect}"
-
-              # remove all the pairs that were added appended to the nodes array *after* the current branch was taken.
-              # that is, pop all the pairs on the nodes array that have a node_index (i.e. the second element in the pair)
-              # greater than or equal to the or_node_index
-              while !nodes.empty? && nodes.last[1] >= or_node_index
-                nodes.pop
-              end
-
-              # if the current or_node has more branches, add it to the nodes list so that the next branch will be built-out
-              if or_node.has_more_branches?
-                nodes << [or_node, next_node_index += 1]
-                break
-              end
-            end
-
-            # visit the nodes in the tree
-            # a node is only visited if its parent changes
-            # when the following until loop finishes, we will have constructed a parse tree with root node root_node
-            until nodes.empty?
-              tree_modified = true
-
-              node_pair = nodes.pop
-              node, node_index = node_pair
-
-              # puts "processing #{node.inspect}"
-
-              # we want to check the subtree for validity before adding this node's children to be processed
-              if branch_is_invalid?(node)
-                # puts 'invalid'
-                # backtrack to the last branch point and select the next possible branch
-                tree_modified = false
-                break
-              end
-
-              if node.non_terminal?
-                # select the next branch of the current node
-                node.select_next_branch!
-                or_nodes << node_pair if node.OR_node?      # make a note of the current branch if the node is an OR-node (a node with multiple branches)
-
-                # we want to visit the node's children, so add them to the stack
-                new_nodes = node.children
-                new_nodes.each(&:reset_next_branch!)    # reset them so that when they're visited, the call to select_next_branch! won't select a non-existent branch
-                new_pairs = new_nodes.reverse.map{|node| [node, next_node_index += 1] }
-                nodes.concat(new_pairs)
-              end
-            end
+            tree_modified, next_node_index, nodes, or_nodes = build_tree(next_node_index, nodes, or_nodes)
 
             # yield the constructed parse tree and corresponding branch selections to the block
             if tree_modified
@@ -305,6 +255,124 @@ module Linguist
           end until or_nodes.empty?
         end    # end of @root_nodes.each
       end
+    end
+
+    # this implements backtracking logic
+    # every pop of an or_node is a search for the next branch point
+    def backtrack(next_node_index, nodes, or_nodes)
+      until or_nodes.empty?
+        or_node, or_node_index = or_nodes.pop
+        # puts "PROCESSING OR node: #{or_node.inspect}"
+
+        # remove all the pairs that were appended to the nodes array *after* the current branch was taken.
+        # that is, pop all the pairs on the nodes array that have a node_index (i.e. the second element in the pair)
+        # greater than or equal to the or_node_index
+        while !nodes.empty? && nodes.last[1] >= or_node_index
+          nodes.pop
+        end
+
+        # if the current or_node has more branches, add it to the nodes list so that the next branch will be built-out
+        if or_node.has_more_branches?
+          # if this OR-node has any non-terminal sibling (or aunt nodes; or great-aunt nodes) nodes appearing to the right of it, then we need to add them back
+          # into the list of nodes to be processed. Those sibling nodes may represent subtrees containing OR-nodes, and we need
+          # to (re-)process those OR-nodes (even if they've already been processed), because now that this OR-node is pointing
+          # to a different branch the subtree represented by this OR-node's parent node has changed, and since we need to account
+          # for all possible combinations of OR-node branch selections that's why we add those sibling non-terminal nodes
+          # (that appear to the right of this OR-node) back to the list of nodes.
+          right_hand_nodes = right_hand_siblings_of_ancestors(or_node)
+          right_hand_nodes.select!{|node| node.non_terminal? }
+          right_hand_nodes.each(&:reset_next_branch!)
+          nodes_to_revisit = right_hand_nodes.reverse.map{|node| [node, next_node_index += 1] }
+          nodes.concat(nodes_to_revisit)
+
+          nodes << [or_node, next_node_index += 1]
+          break
+        end
+      end
+
+      [next_node_index, nodes, or_nodes]
+    end
+
+    # Given a node, N, right_hand_siblings_of_ancestors(N) returns an array of nodes.
+    # For example:
+    #          A
+    #        / | \
+    #       B  C  D
+    #     / | \ \  \
+    #    E  F  G H  I
+    # right_hand_siblings_of_ancestors(A) returns []
+    # right_hand_siblings_of_ancestors(B) returns [C, D]
+    # right_hand_siblings_of_ancestors(E) returns [F, G, C, D]
+    # right_hand_siblings_of_ancestors(F) returns [G, C, D]
+    # right_hand_siblings_of_ancestors(G) returns [C, D]
+    # right_hand_siblings_of_ancestors(C) returns [D]
+    # right_hand_siblings_of_ancestors(H) returns [D]
+    # right_hand_siblings_of_ancestors(D) returns []
+    # right_hand_siblings_of_ancestors(I) returns []
+    def right_hand_siblings_of_ancestors(node)
+      right_nodes = []
+      while node.parent
+        right_nodes.concat(right_hand_siblings(node))
+        node = node.parent
+      end
+      right_nodes
+    end
+
+    # Given a parent node P, whose children are [A, B, C, D],
+    # the siblings appearing to the right of node B are nodes C, and D.
+    # For example:
+    #   right_hand_siblings(A) returns [B, C, D]
+    #   right_hand_siblings(B) returns [C, D]
+    #   right_hand_siblings(D) returns []
+    def right_hand_siblings(node)
+      parent = node.parent
+      if parent
+        child_index = parent.children.index(node)
+        if child_index < parent.children.length - 1
+          parent.children[(child_index + 1)..-1]
+        else
+          []
+        end
+      else
+        []
+      end
+    end
+
+    # visit the nodes in the tree
+    # a node is only visited if its parent changes
+    # when the following until loop finishes, we will have constructed a parse tree with root node root_node
+    def build_tree(next_node_index, nodes, or_nodes)
+      tree_modified = false
+      until nodes.empty?
+        tree_modified = true
+
+        node_pair = nodes.pop
+        node, node_index = node_pair
+
+        # puts "processing #{node.inspect}"
+
+        # we want to check the subtree for validity before adding this node's children to be processed
+        if branch_is_invalid?(node)
+          # puts 'invalid'
+          # backtrack to the last branch point and select the next possible branch
+          tree_modified = false
+          break
+        end
+
+        if node.non_terminal?
+          # select the next branch of the current node
+          node.select_next_branch!
+          or_nodes << node_pair if node.OR_node?      # make a note of the current branch if the node is an OR-node (a node with multiple branches)
+
+          # we want to visit the node's children, so add them to the stack
+          new_nodes = node.children
+          new_nodes.each(&:reset_next_branch!)    # reset them so that when they're visited, the call to select_next_branch! won't select a non-existent branch
+          new_pairs = new_nodes.reverse.map{|node| [node, next_node_index += 1] }
+          nodes.concat(new_pairs)
+        end
+      end
+
+      [tree_modified, next_node_index, nodes, or_nodes]
     end
 
     def branch_is_invalid?(child_node)

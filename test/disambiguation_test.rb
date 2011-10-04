@@ -74,6 +74,8 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:N, '8')
     g.production(:N, '9')
     
+    # pp g.to_bnf
+
     parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
 
     # 1 trees
@@ -81,24 +83,37 @@ class DisambiguationTest < Test::Unit::TestCase
     assert parse_forest.count == 1
     
     # 2 trees
-    parse_forest = parser.parse("1-2*3")
+    parse_forest = parser.parse("1-2-3")
     assert parse_forest.count == 2
     
     # 5 trees
-    parse_forest = parser.parse("1-2*3^4")
+    parse_forest = parser.parse("1-2-3-4")
     assert parse_forest.count == 5
     
     # 14 trees
-    parse_forest = parser.parse("1-2*3^4+5")
+    parse_forest = parser.parse("1-2-3-4-5")
     assert parse_forest.count == 14
 
-    # 42 trees - takes ~10 seconds to run
-    parse_forest = parser.parse("1-2*3^4+5/6")
-    assert parse_forest.count == 42
+    # 42 trees
+    parse_forest = parser.parse("1-2-3-4-5-6")
+    # pp parse_forest.trees.map(&:to_sexp)
+    assert_equal 42, parse_forest.count
     
-    # 132 trees - takes ~10 minutes to run
+    # 132 trees
     parse_forest = parser.parse("1-2*3^4+5/6*7")   # (1-(2*(3^4)))+((5/6)*7)
-    assert parse_forest.count == 132
+    assert_equal 132, parse_forest.count
+
+    # 429 trees
+    parse_forest = parser.parse("1+2+3+4+5+6+7+8")
+    assert_equal 429, parse_forest.count
+
+    # 1430 trees
+    parse_forest = parser.parse("1-2-3-4-5-6-7-8-9")
+    assert_equal 1430, parse_forest.count
+
+    # 4862 trees
+    parse_forest = parser.parse("1-2*3^4+5/6*7+8+9+0")
+    assert_equal 4862, parse_forest.count
 
     g.prioritize(e_exp_e, e_multiply_e)
     g.prioritize(e_exp_e, e_divide_e)
@@ -261,7 +276,6 @@ class DisambiguationTest < Test::Unit::TestCase
 
     parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
 
-
     # 1 trees
     parse_forest = parser.parse("abc")
     assert parse_forest.count == 1
@@ -303,6 +317,10 @@ class DisambiguationTest < Test::Unit::TestCase
     g.add_follow_restriction([:CHAR], /cc/)
 
     # 0 trees
+    parse_forest = parser.parse("acc")
+    assert parse_forest.count == 0
+
+    # 0 trees
     parse_forest = parser.parse("abc")
     assert parse_forest.count == 0
 
@@ -313,10 +331,6 @@ class DisambiguationTest < Test::Unit::TestCase
     # 1 trees
     parse_forest = parser.parse("cbc")
     assert parse_forest.count == 1
-
-    # 0 trees
-    parse_forest = parser.parse("acc")
-    assert parse_forest.count == 0
 
     # 0 trees
     parse_forest = parser.parse("bcc")
