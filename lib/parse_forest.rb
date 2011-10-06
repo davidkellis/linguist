@@ -143,14 +143,39 @@ module Linguist
         node.alternatives = generate_alternatives(node)
       end
 
-      # pp @nodes
+      filter_node_branches!
+
+      # if any of the root_nodes are one of the nodes that were rejected by the disambiguation rules,
+      # then we need to manually remove the root node(s) that were rejected.
+      @root_nodes = @root_nodes.select{|root_node| @nodes.include?(root_node) }
     end
 
     def select_preferred_and_non_avoided_nodes!
       @nodes = tree_validator.select_preferred_and_non_avoided_nodes(@nodes)
-      # if any of the root_nodes are one of the nodes that were rejected by the prefer/avoid disambiguation rules,
-      # then we need to manually remove the root node(s) that were rejected.
-      @root_nodes = @root_nodes.select{|root_node| @nodes.include?(root_node) }
+    end
+
+    def filter_node_branches!
+      @nodes = tree_validator.select_branches_conforming_to_priority_rules(@nodes)
+      @nodes = tree_validator.select_branches_conforming_to_associativity_rules(@nodes)
+
+      # prune any nodes that have no alternative branches
+      # and prune any alternative branches that reference non-existent nodes
+      keep_pruning = true
+      while keep_pruning
+        keep_pruning = false
+
+        # prune any nodes that have no branches, since a non-terminal node without any branch can't lead to a terminal, and therefore invalid
+        changed = @nodes.reject! {|node| node.alternatives.empty? }
+        keep_pruning = true if changed
+
+        # remove any branches that refer to nodes that have been pruned.
+        @nodes.each do |node|
+          changed = node.alternatives.reject! do |alternative|
+            not alternative.select(&:non_terminal?).all?{|child_node| @nodes.include?(child_node) }
+          end
+          keep_pruning = true if changed
+        end
+      end
     end
 
     def generate_alternatives(node)

@@ -22,28 +22,28 @@ module Linguist
       end
 
       def subtree_obeys_disambiguation_rules?(token_stream, parent_node)
-        subtree_obeys_priority_rules?(parent_node) && 
-        subtree_obeys_associativity_rules?(parent_node) &&
+        # subtree_obeys_priority_rules?(parent_node) && 
+        # subtree_obeys_associativity_rules?(parent_node) &&
         subtree_obeys_reject_rules?(token_stream, parent_node) &&
         subtree_obeys_follow_restrictions?(token_stream, parent_node)
       end
       
-      def subtree_obeys_priority_rules?(tree_root_node)
-        priority_tree.is_parse_tree_valid?(tree_root_node)
-      end
+      # def subtree_obeys_priority_rules?(tree_root_node)
+      #   priority_tree.is_parse_tree_valid?(tree_root_node)
+      # end
       
-      def subtree_obeys_associativity_rules?(tree_root_node)
-        if tree_root_node.non_terminal?
-          if associativity_rules.include?(tree_root_node.production)
-            associativity_rule = associativity_rules[tree_root_node.production]
-            associativity_rule.is_parse_tree_valid?(tree_root_node)
-          else
-            true    # there is no associativity rule that applies to the production from which tree_root_node was derived
-          end
-        else
-          true      # the tree_root_node represents a terminal symbol, so it is a valid parse tree (i.e. it is a leaf node)
-        end
-      end
+      # def subtree_obeys_associativity_rules?(tree_root_node)
+      #   if tree_root_node.non_terminal?
+      #     if associativity_rules.include?(tree_root_node.production)
+      #       associativity_rule = associativity_rules[tree_root_node.production]
+      #       associativity_rule.is_parse_tree_valid?(tree_root_node)
+      #     else
+      #       true    # there is no associativity rule that applies to the production from which tree_root_node was derived
+      #     end
+      #   else
+      #     true      # the tree_root_node represents a terminal symbol, so it is a valid parse tree (i.e. it is a leaf node)
+      #   end
+      # end
 
       # Rejects
       # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.disambrejects
@@ -168,7 +168,33 @@ module Linguist
           node_array.group_by {|node| [node.start_index, node.end_index] }
         end
       end
-    end
+
+      # this method examines each alternative branch of every node, and prunes those alternative branches
+      # that would cause the node to violate the priority rules
+      # Returns the same collection of nodes that were given, but some of the alternative branches of each node
+      # may have been removed.
+      def select_branches_conforming_to_priority_rules(non_terminal_nodes)
+        non_terminal_nodes.each do |node|
+          node.alternatives.select! do |children|
+            priority_tree.is_parent_children_relationship_valid?(node, children)
+          end
+        end
+      end
+
+      def select_branches_conforming_to_associativity_rules(non_terminal_nodes)
+        non_terminal_nodes.each do |node|
+          node.alternatives.select! do |children|
+            if associativity_rules.include?(node.production)
+              associativity_rule = associativity_rules[node.production]
+              associativity_rule.is_parent_children_relationship_valid?(node, children)
+            else
+              true    # there is no associativity rule that applies to the production from which tree_root_node was derived
+            end
+          end
+        end
+      end
+
+    end     # end TreeValidator
 
     # http://homepages.cwi.nl/~daybuild/daily-books/syntax/2-sdf/sdf.html#section.priorities
     # If A > B, then all trees are removed that have a B node as a direct child of an A node.
@@ -187,19 +213,37 @@ module Linguist
         lesser_production_node.parents << greater_production_node
       end
     
-      def is_parse_tree_valid?(parent_node)
+      # def is_parse_tree_valid?(parent_node)
+      #   if parent_node.non_terminal?
+      #     if @priority_relations.include?(parent_node.production)
+      #       lesser_priority_nodes = @priority_relations[parent_node.production].descendants
+      #       lesser_priority_productions = lesser_priority_nodes.map(&:value)
+      #       # do any of the child nodes cause the Priority rule to be violated?
+      #       is_rule_violated = parent_node.children.any? do |child_node|
+      #         lesser_priority_productions.include?(child_node.production)
+      #       end
+      #       # if is_rule_violated
+      #       #   pp 'rule violated'
+      #       #   # pp parent_node.to_sexp
+      #       # end
+      #       !is_rule_violated
+      #     else
+      #       true    # there are no priority rules that reference parent_node.production
+      #     end
+      #   else
+      #     true      # the parent node represents a terminal symbol, so it is a valid parse tree (i.e. it is a leaf node)
+      #   end
+      # end
+
+      def is_parent_children_relationship_valid?(parent_node, child_nodes)
         if parent_node.non_terminal?
           if @priority_relations.include?(parent_node.production)
             lesser_priority_nodes = @priority_relations[parent_node.production].descendants
             lesser_priority_productions = lesser_priority_nodes.map(&:value)
             # do any of the child nodes cause the Priority rule to be violated?
-            is_rule_violated = parent_node.children.any? do |child_node|
+            is_rule_violated = child_nodes.any? do |child_node|
               lesser_priority_productions.include?(child_node.production)
             end
-            # if is_rule_violated
-            #   pp 'rule violated'
-            #   # pp parent_node.to_sexp
-            # end
             !is_rule_violated
           else
             true    # there are no priority rules that reference parent_node.production
@@ -250,17 +294,32 @@ module Linguist
         @production = production
       end
     
-      def is_parse_tree_valid?(parent_node)
+      # def is_parse_tree_valid?(parent_node)
+      #   is_parse_tree_invalid = case @direction
+      #     when :left
+      #       # filter out all occurences of P as a direct child of P in the right-most argument
+      #       parent_node.production == @production && parent_node.children.last.production == @production
+      #     when :right
+      #       # filter out all occurences of P as a direct child of P in the left-most argument
+      #       parent_node.production == @production && parent_node.children.first.production == @production
+      #     when :non_assoc
+      #       # filter out all occurrences of P as a direct child of P in any argument
+      #       parent_node.production == @production && parent_node.children.any? {|child_node| child_node.production == @production }
+      #   end
+      #   !is_parse_tree_invalid
+      # end
+
+      def is_parent_children_relationship_valid?(parent_node, child_nodes)
         is_parse_tree_invalid = case @direction
           when :left
             # filter out all occurences of P as a direct child of P in the right-most argument
-            parent_node.production == @production && parent_node.children.last.production == @production
+            parent_node.production == @production && child_nodes.last.production == @production
           when :right
             # filter out all occurences of P as a direct child of P in the left-most argument
-            parent_node.production == @production && parent_node.children.first.production == @production
+            parent_node.production == @production && child_nodes.first.production == @production
           when :non_assoc
             # filter out all occurrences of P as a direct child of P in any argument
-            parent_node.production == @production && parent_node.children.any? {|child_node| child_node.production == @production }
+            parent_node.production == @production && child_nodes.any? {|child_node| child_node.production == @production }
         end
         !is_parse_tree_invalid
       end
@@ -272,18 +331,34 @@ module Linguist
         @production_set = production_set
       end
       
-      def is_parse_tree_valid?(parent_node)
+      # def is_parse_tree_valid?(parent_node)
+      #   parent_production = parent_node.production
+      #   is_parse_tree_invalid = @production_set.include?(parent_production) && case @direction
+      #     when :left
+      #       # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the right-most argument
+      #       @production_set.include?(parent_node.children.last.production)
+      #     when :right
+      #       # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the left-most argument
+      #       @production_set.include?(parent_node.children.first.production)
+      #     when :non_assoc
+      #       # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in any argument
+      #       parent_node.children.any? {|child_node| @production_set.include?(child_node.production) }
+      #   end
+      #   !is_parse_tree_invalid
+      # end
+
+      def is_parent_children_relationship_valid?(parent_node, child_nodes)
         parent_production = parent_node.production
         is_parse_tree_invalid = @production_set.include?(parent_production) && case @direction
           when :left
             # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the right-most argument
-            @production_set.include?(parent_node.children.last.production)
+            @production_set.include?(child_nodes.last.production)
           when :right
             # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in the left-most argument
-            @production_set.include?(parent_node.children.first.production)
+            @production_set.include?(child_nodes.first.production)
           when :non_assoc
             # filter out all occurences of P1 ∈ @production_set that occur as a direct child of P1 ∈ @production_set in any argument
-            parent_node.children.any? {|child_node| @production_set.include?(child_node.production) }
+            child_nodes.any? {|child_node| @production_set.include?(child_node.production) }
         end
         !is_parse_tree_invalid
       end
