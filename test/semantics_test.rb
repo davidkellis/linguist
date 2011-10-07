@@ -59,12 +59,12 @@ class SemanticsTest < Test::Unit::TestCase
       bind(e_n, mod_n)
 
       # disambiguation rules
-      prioritize(e_multiply_e, e_plus_e)
-      prioritize(e_multiply_e, e_minus_e)
-      prioritize(e_divide_e, e_plus_e)
-      prioritize(e_divide_e, e_minus_e)
-      # I'd like to be able to write this:
-      # prioritize([e_multiply_e, e_divide_e], [e_plus_e, e_minus_e])
+      prioritize([e_multiply_e, e_divide_e], [e_plus_e, e_minus_e])
+      # The following 4 lines have the same effect as the prior one.
+      # prioritize(e_multiply_e, e_plus_e)
+      # prioritize(e_multiply_e, e_minus_e)
+      # prioritize(e_divide_e, e_plus_e)
+      # prioritize(e_divide_e, e_minus_e)
 
       associate_equal_priority_group(:left, [e_plus_e, e_minus_e])
       associate_equal_priority_group(:left, [e_multiply_e, e_divide_e])
@@ -74,10 +74,10 @@ class SemanticsTest < Test::Unit::TestCase
 
     parser = Linguist::PracticalEarleyEpsilonParser.new(calculator_grammar.to_bnf)
     
-    # for a 15 term expression like the following, there are CatalanNumber[15-1] = 2674440 possible parse trees
+    # for a 15 term expression like the following, there are CatalanNumber[15-1] = 2,674,440 possible parse trees
     # assert parser.match?("1+2-3+4*5-6*7+8*8+9-3*5-8/2+3")
     # expr = "1+2-3+4+5+6+7"
-    expr = "1+2-3+4*5-6*7+8*8+9-3*5-8/2+3-2+4+5+6/4*2*9"
+    expr = "1+2-3+4*5-6*7+8*8+9-3*5-8/2+3-2+4+5+6/4*2*8/3/2/4+2*4-1-4-4-5-7*2*3*4*5/3/2"
     assert parser.match?(expr)
     parse_forest = parser.parse(expr)
     assert_equal 1, parse_forest.count

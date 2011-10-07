@@ -197,9 +197,15 @@ module Linguist
     #   production are resolved. To resolve ambiguities between different productions you can deﬁne
     #   relative priorities between them.
     # Arguments:
-    #   production1 > production2
-    def prioritize(production1, production2)
-      tree_validator.priority_tree.prioritize(production1, production2)
+    #   production_group1 > production_group2
+    def prioritize(production_or_production_group1, production_or_production_group2)
+      greater_productions = production_or_production_group1.is_a?(Array) ? production_or_production_group1 : [production_or_production_group1]
+      lesser_productions = production_or_production_group2.is_a?(Array) ? production_or_production_group2 : [production_or_production_group2]
+      greater_productions.each do |greater_production|
+        lesser_productions.each do |lesser_production|
+          tree_validator.priority_tree.prioritize(greater_production, lesser_production)
+        end
+      end
     end
     
     # Associativity
