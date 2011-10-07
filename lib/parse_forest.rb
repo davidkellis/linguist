@@ -145,7 +145,11 @@ module Linguist
         node.alternatives = generate_alternatives(node)
       end
 
+      # puts "There are #{@nodes.count} nodes"
+
       filter_node_branches!
+
+      # puts 'done generating nodes'
 
       # if any of the root_nodes are one of the nodes that were rejected by the disambiguation rules,
       # then we need to manually remove the root node(s) that were rejected.
@@ -154,7 +158,12 @@ module Linguist
 
     def filter_node_branches!
       @nodes = tree_validator.select_branches_conforming_to_priority_rules(@nodes)
+      # puts "There are #{@nodes.count} nodes"
       @nodes = tree_validator.select_branches_conforming_to_associativity_rules(@nodes)
+      # puts "There are #{@nodes.count} nodes"
+
+      # this makes it fast to do element-of queries like @nodes.include?(X)
+      @nodes = @nodes.to_set
 
       # prune any nodes that have no alternative branches
       # and prune any alternative branches that reference non-existent nodes
