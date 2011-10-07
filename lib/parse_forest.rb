@@ -137,7 +137,9 @@ module Linguist
     # this is the equivalent of generating a parse forest grammar using the given nodes
     # this is also the equivalent of building a DAG representing the parse forest
     def generate_node_alternatives!
-      select_preferred_and_non_avoided_nodes!    # this enforces any prefer/avoid disambiguation rules
+      @nodes = tree_validator.select_preferred_and_non_avoided_nodes(@nodes)                    # this enforces any prefer/avoid disambiguation rules
+      @nodes = tree_validator.select_nodes_conforming_to_reject_rules(@token_stream, @nodes)    # this enforces any reject disambiguation rules
+      @nodes = tree_validator.select_nodes_obeying_follow_restrictions(@token_stream, @nodes)   # this enforces any follow restrictions (another disambiguation rule)
 
       @nodes.each do |node|
         node.alternatives = generate_alternatives(node)
@@ -148,10 +150,6 @@ module Linguist
       # if any of the root_nodes are one of the nodes that were rejected by the disambiguation rules,
       # then we need to manually remove the root node(s) that were rejected.
       @root_nodes = @root_nodes.select{|root_node| @nodes.include?(root_node) }
-    end
-
-    def select_preferred_and_non_avoided_nodes!
-      @nodes = tree_validator.select_preferred_and_non_avoided_nodes(@nodes)
     end
 
     def filter_node_branches!
@@ -376,14 +374,6 @@ module Linguist
 
         # puts "processing #{node.inspect}"
 
-        # we want to check the subtree for validity before adding this node's children to be processed
-        if branch_is_invalid?(node)
-          # puts 'invalid'
-          # backtrack to the last branch point and select the next possible branch
-          tree_modified = false
-          break
-        end
-
         if node.non_terminal?
           # select the next branch of the current node
           node.select_next_branch!
@@ -398,20 +388,6 @@ module Linguist
       end
 
       [tree_modified, next_node_index, nodes, or_nodes]
-    end
-
-    def branch_is_invalid?(child_node)
-      if child_node.is_rightmost_child?
-        # puts 'checking tree for validity:'
-        # puts child_node.parent.to_sexp
-        valid = tree_validator.nil? || tree_validator.subtree_obeys_disambiguation_rules?(token_stream, child_node.parent)
-        # unless valid
-        #   pp 'invalid'
-        #   pp child_node.parent
-        #   pp child_node
-        # end
-        !valid
-      end
     end
 
     # this method enumerates the trees in the parse forest
