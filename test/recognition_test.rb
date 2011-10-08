@@ -10,7 +10,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:s, 'b')
     end
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("aaaab")
     assert_equal [[:s, "a", [:s, "a", [:s, "a", [:s, "a", [:s, "b"]]]]]], parser.parse_forest.trees.map(&:to_sexp)
@@ -27,7 +27,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:b, 'b')
     }
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("abbbbbb")
     assert_equal 1, parser.parse_forest.count
@@ -46,7 +46,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:b, 'b')
     }
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
   
     assert parser.match?("abbbbbbbbbbbbb")
     assert_equal 1, parser.parse_forest.count

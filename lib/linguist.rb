@@ -13,47 +13,6 @@ require 'parsers/practical_earley'
 module Linguist
   Production = Struct.new(:non_terminal, :pattern)
 
-  # In a BNF Grammar, "productions" is a hash of the form:
-  # { :NT -> [[:A, :B, 'c'], [:D, 'e'], ...] }
-  # In other words, each key/value pair is a non-terminal/array-of-alternatives pair, where the
-  # array-of-alternatives is an array of sequence arrays, with each sequence array being a flat array
-  # containing only terminals (characters) and non-terminals (symbols).
-  class BNFGrammar
-    attr_accessor :start, :productions, :tree_validator, :semantic_actions
-
-    def initialize
-      @productions = {}
-      @start = nil
-      @tree_validator = Disambiguation::TreeValidator.new
-      @semantic_actions = {}
-    end
-
-    def non_terminals
-      productions.keys
-    end
-
-    def alternatives(non_terminal)
-      productions[non_terminal] || []
-    end
-
-    def nullable_non_terminals
-      unless @nullable_non_terminals
-        non_terminals_directly_deriving_epsilon = non_terminals.select do |nt|
-          productions[nt].any? {|sequence| sequence.empty? }
-        end
-        @nullable_non_terminals = Set.new(non_terminals_directly_deriving_epsilon)
-        begin
-          original_nullable_count = @nullable_non_terminals.size
-          
-          @nullable_non_terminals += non_terminals.select do |nt|
-            productions[nt].any? {|sequence| sequence.all? {|token| @nullable_non_terminals.include?(token) } }
-          end
-        end until original_nullable_count == @nullable_non_terminals.size
-      end
-      @nullable_non_terminals
-    end
-  end
-
   # Grammar is a data structure that represents a context-free grammar (CFG).
   #
   # From wikipedia:
@@ -69,7 +28,7 @@ module Linguist
 
     DEFAULT_ALPHABET = (0..127).to_a.map(&:chr)     # ASCII 0-127. Make them UTF-8 by calling int.chr(Encoding::UTF_8)
     
-    attr_accessor :start, :productions, :tree_validator, :semantic_actions, :production_pattern_labels
+    attr_accessor :start, :patterns, :productions, :tree_validator, :semantic_actions, :production_pattern_labels
     attr_reader :alphabet
     
     def self.unique_non_terminal
@@ -82,6 +41,7 @@ module Linguist
     def initialize(start_non_terminal = nil, alphabet = nil, &block)
       @start = start_non_terminal
       @productions = {}
+      @patterns = {}
       @tree_validator = Disambiguation::TreeValidator.new
       @semantic_actions = {}
       @production_pattern_labels = {}
@@ -96,18 +56,30 @@ module Linguist
       @dot_productions = production(@dot, @alphabet)
     end
     
-    def to_bnf
-      bnf_grammar = BNFGrammar.new
-      bnf_grammar.start = start
-      tmp_productions = productions.reduce({}) do |m, kv|
-        non_terminal, alternatives = kv
-        m[non_terminal] = alternatives.map(&:to_bnf_pattern)
-        m
+    # returns an Array of Productions that have the given non_terminal
+    def alternatives(non_terminal)
+      productions[non_terminal] || []
+    end
+
+    def non_terminals
+      productions.keys
+    end
+
+    def nullable_non_terminals
+      unless @nullable_non_terminals
+        non_terminals_directly_deriving_epsilon = non_terminals.select do |nt|
+          productions[nt].any? {|production| production.pattern.empty? }
+        end
+        @nullable_non_terminals = Set.new(non_terminals_directly_deriving_epsilon)
+        begin
+          original_nullable_count = @nullable_non_terminals.size
+          
+          @nullable_non_terminals += non_terminals.select do |nt|
+            productions[nt].any? {|production| production.pattern.all? {|token| @nullable_non_terminals.include?(token) } }
+          end
+        end until original_nullable_count == @nullable_non_terminals.size
       end
-      bnf_grammar.productions.merge!(tmp_productions)
-      bnf_grammar.tree_validator = tree_validator
-      bnf_grammar.semantic_actions = semantic_actions
-      bnf_grammar
+      @nullable_non_terminals
     end
     
     def to_s
@@ -147,8 +119,9 @@ module Linguist
       # set the start non-terminal if it isn't already set
       self.start ||= sym
 
-      # ensure that productions[sym] is an array
+      # ensure that productions[sym] and patterns[sym] is an array
       productions[sym] ||= []
+      patterns[sym] ||= []
 
       case pattern
       # Array is a special case - it represents an array of productions each of which immediately derives a terminal
@@ -160,20 +133,21 @@ module Linguist
           production(name, terminal)
         end
       else
-        # productions[sym] is a set of pattern sequences representing one of the following Pattern types:
+        # patterns[sym] is a set of pattern sequences representing one of the following Pattern types:
         # Terminal
         # NonTerminal
         # Epsilon
         # Any (Dot; wildcard)
         # Sequence (represents a sequence of patterns)
-        alternative = wrap(pattern)
-        productions[sym] << alternative
+        pattern = wrap(pattern)
+        production = Production.new(sym, pattern.to_bnf_pattern)
 
-        production = Production.new(sym, alternative.to_bnf_pattern)
+        patterns[sym] << pattern
+        productions[sym] << production
 
-        label_references_module = module_with_label_references_to_children(alternative.pattern_labels)
+        label_references_module = module_with_label_references_to_children(pattern.pattern_labels)
         bind(production, label_references_module)
-        # production_pattern_labels[production] = alternative.pattern_labels
+
         production
       end
     end

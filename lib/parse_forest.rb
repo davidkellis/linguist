@@ -157,10 +157,7 @@ module Linguist
     end
 
     def filter_node_branches!
-      @nodes = tree_validator.select_branches_conforming_to_priority_rules(@nodes)
-      # puts "There are #{@nodes.count} nodes"
-      @nodes = tree_validator.select_branches_conforming_to_associativity_rules(@nodes)
-      # puts "There are #{@nodes.count} nodes"
+      @nodes = tree_validator.select_branches_conforming_to_disambiguation_rules(@nodes)
 
       # this makes it fast to do element-of queries like @nodes.include?(X)
       @nodes = @nodes.to_set

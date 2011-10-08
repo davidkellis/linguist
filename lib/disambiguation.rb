@@ -125,27 +125,24 @@ module Linguist
       end
 
       # this method examines each alternative branch of every node, and prunes those alternative branches
-      # that would cause the node to violate the priority rules
+      # that would cause the node to violate the priority or associativity disambiguation rules
       # Returns the same collection of nodes that were given, but some of the alternative branches of each node
       # may have been removed.
-      def select_branches_conforming_to_priority_rules(non_terminal_nodes)
+      def select_branches_conforming_to_disambiguation_rules(non_terminal_nodes)
         non_terminal_nodes.each do |node|
           node.alternatives.select! do |children|
-            priority_tree.is_parent_children_relationship_valid?(node, children)
+            priority_tree.is_parent_children_relationship_valid?(node, children) &&
+            node_obeys_associativity_rules?(node, children)
           end
         end
       end
 
-      def select_branches_conforming_to_associativity_rules(non_terminal_nodes)
-        non_terminal_nodes.each do |node|
-          node.alternatives.select! do |children|
-            if associativity_rules.include?(node.production)
-              associativity_rule = associativity_rules[node.production]
-              associativity_rule.is_parent_children_relationship_valid?(node, children)
-            else
-              true    # there is no associativity rule that applies to the production from which tree_root_node was derived
-            end
-          end
+      def node_obeys_associativity_rules?(node, children)
+        if associativity_rules.include?(node.production)
+          associativity_rule = associativity_rules[node.production]
+          associativity_rule.is_parent_children_relationship_valid?(node, children)
+        else
+          true    # there is no associativity rule that applies to the production from which tree_root_node was derived
         end
       end
 

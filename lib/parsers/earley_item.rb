@@ -11,7 +11,7 @@ module Linguist
   #   recognition of the recognized part started.
   #   The Item E-->E•QF@3 would be represented using this structure as:
   #   Item.new(:E, [:E], [:Q, :F], 3)
-  Item = Struct.new(:non_terminal, :left_pattern, :right_pattern, :position)
+  Item = Struct.new(:non_terminal, :left_pattern, :right_pattern, :position, :production)
   class Item
     def to_s
       "[#{non_terminal} -> #{left_pattern.join(" ")}•#{right_pattern.join(" ")}, #{position}]"

@@ -38,12 +38,12 @@ module Linguist
       match?(input) ? parse_forest : []
     end
   
-    # @param alternatives is an array of pattern sequences, where each pattern sequence is 
+    # @param productions is an array of Production objects. Each production's pattern sequence is 
     #                     an array of terminals and non-terminals.
     # @return A UniqueArray containing Items, each of the form [non_terminal -> •alternative, position],
     #         for every alternative sequence in +alternatives+
-    def construct_initial_item_set(non_terminal, alternatives, position)
-      UniqueArray.new(alternatives.map {|pattern| Item.new(non_terminal, [], pattern, position) })
+    def construct_initial_item_set(non_terminal, productions, position)
+      UniqueArray.new(productions.map {|production| Item.new(non_terminal, [], production.pattern, position, production) })
     end
   
     def build_initial_itemset
@@ -109,7 +109,8 @@ module Linguist
         new_item = Item.new(item.non_terminal,
                             item.left_pattern + [token],
                             item.right_pattern[1...item.right_pattern.size],
-                            item.position)
+                            item.position,
+                            item.production)
 
         list[destination_position] ||= UniqueArray.new
         list[destination_position] << new_item
@@ -156,7 +157,7 @@ module Linguist
       node_sets = completed_list.map.with_index do |item_set, index|
         item_set.map do |item|
           exclusive_index_at_which_substring_ends = index
-          ParseForest::Node.new(Production.new(item.non_terminal, item.left_pattern),
+          ParseForest::Node.new(item.production,
                                 item.position, 
                                 exclusive_index_at_which_substring_ends)
         end
@@ -196,7 +197,8 @@ module Linguist
           list[position] << Item.new(item.non_terminal,
                                      item.left_pattern + [item.right_pattern.first],
                                      item.right_pattern[1...item.right_pattern.size],
-                                     item.position)
+                                     item.position,
+                                     item.production)
         end
       end
     end

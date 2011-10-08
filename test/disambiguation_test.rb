@@ -23,7 +23,7 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:N, '8')
     g.production(:N, '9')
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g)
 
     # 1 tree
     parse_forest = parser.parse("5+6")
@@ -74,9 +74,7 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:N, '8')
     g.production(:N, '9')
     
-    # pp g.to_bnf
-
-    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g)
 
     # 1 trees
     parse_forest = parser.parse("1-2")
@@ -230,9 +228,7 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:CHAR, 'c')
     g.start = :ID
 
-    # pp g.to_bnf
-
-    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g)
 
     # 1 trees
     parse_forest = parser.parse("a")
@@ -274,7 +270,7 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:CHAR, 'c')
     g.start = :ID
 
-    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g)
 
     # 1 trees
     parse_forest = parser.parse("abc")
@@ -368,7 +364,7 @@ class DisambiguationTest < Test::Unit::TestCase
     g.production(:SPACE, ' ')
     g.start = :TERM
 
-    parser = Linguist::PracticalEarleyEpsilonParser.new(g.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(g)
 
     # 1 tree
     parse_forest = parser.parse("if expr then expr")

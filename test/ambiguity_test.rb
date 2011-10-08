@@ -10,7 +10,7 @@ class AmbiguityTest < Test::Unit::TestCase
       production(:s, 'a')
     end
 
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("aaaa")
 

@@ -9,7 +9,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:s, kleene('a'))
     end
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("")
     assert parser.match?("a")
@@ -24,7 +24,7 @@ class RecognitionTest < Test::Unit::TestCase
       production(:s, optional('a'))
     end
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("")
     assert parser.match?("a")

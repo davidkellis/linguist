@@ -9,7 +9,7 @@ class AnyTest < Test::Unit::TestCase
       production(:s, seq('x', dot, 'z'))
     end
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("xyz")
     assert parser.match?("x1z")
@@ -25,7 +25,7 @@ class AnyTest < Test::Unit::TestCase
       production(:s, kleene(dot))
     end
     
-    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar.to_bnf)
+    parser = Linguist::PracticalEarleyEpsilonParser.new(grammar)
     
     assert parser.match?("")
     assert parser.match?("a")

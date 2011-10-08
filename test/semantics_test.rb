@@ -1,6 +1,7 @@
 $: << File.expand_path('../../lib', __FILE__)
 require 'test/unit'
 require "linguist"
+require 'perftools'
 
 class SemanticsTest < Test::Unit::TestCase
   def test_calculator_language
@@ -72,16 +73,18 @@ class SemanticsTest < Test::Unit::TestCase
       # associate(:left, [e_plus_e, e_minus_e, e_multiply_e, e_divide_e])
     end
 
-    parser = Linguist::PracticalEarleyEpsilonParser.new(calculator_grammar.to_bnf)
-    
-    # for a 15 term expression like the following, there are CatalanNumber[15-1] = 2,674,440 possible parse trees
-    # assert parser.match?("1+2-3+4*5-6*7+8*8+9-3*5-8/2+3")
-    # expr = "1+2-3+4+5+6+7"
-    expr = "1+2-3+4*5-6*7+8*8+9-3*5-8/2+3-2+4+5+6/4*2*8/3/2/4+2*4-1-4-4-5-7*2*3*4*5/3/2"
-    assert parser.match?(expr)
-    parse_forest = parser.parse(expr)
-    assert_equal 1, parse_forest.count
-    tree = parse_forest.annotated_parse_tree(calculator_grammar.semantic_actions)
-    assert_equal eval(expr), tree.eval
+    PerfTools::CpuProfiler.start("/tmp/semantics_test") do
+      parser = Linguist::PracticalEarleyEpsilonParser.new(calculator_grammar)
+      
+      # for a 15 term expression like the following, there are CatalanNumber[15-1] = 2,674,440 possible parse trees
+      # assert parser.match?("1+2-3+4*5-6*7+8*8+9-3*5-8/2+3")
+      # expr = "1+2-3+4+5+6+7"
+      expr = "1+2-3+4*5-6*7+8*8+9-3*5-8/2+3-2+4+5+6/4*2*8/3/2/4+2*4-1-4-4-5-7*2*3*4*5/3/2"
+      assert parser.match?(expr)
+      parse_forest = parser.parse(expr)
+      assert_equal 1, parse_forest.count
+      tree = parse_forest.annotated_parse_tree(calculator_grammar.semantic_actions)
+      assert_equal eval(expr), tree.eval
+    end
   end
 end
