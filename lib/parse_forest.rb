@@ -130,7 +130,17 @@ module Linguist
       @nodes = nodes
       @tree_validator = tree_validator || Disambiguation::TreeValidator.new
 
-      @nodes_by_start_index = @nodes.group_by {|node| node.start_index }
+      # @nodes_by_start_index_and_production_non_terminal is a structure that indexes the @nodes array for quick lookup
+      # given a start-index and a production non-terminal.
+      # It is a hash of the form:
+      # {start_index1 : {non_terminal1: [node1, node2, node3], non_terminal2: [node4, node5], ...},
+      #  start_index2 : {non_terminal3: [node6], ...},
+      #  ...}
+      # where each start_index is an integer, and each non_terminal is a Symbol.
+      @nodes_by_start_index_and_production_non_terminal = @nodes.group_by {|node| node.start_index }
+      @nodes_by_start_index_and_production_non_terminal.merge!(@nodes_by_start_index_and_production_non_terminal) do |k,v|
+        v.group_by {|node| node.production.non_terminal }
+      end
     end
 
     # this generates all the alternative patterns for each node
@@ -232,8 +242,10 @@ module Linguist
     def find_child_nodes_by_term_position(parent_node, term_index, start_index)
       pattern_term = parent_node.production.pattern[term_index]
       end_index = parent_node.end_index
-      (@nodes_by_start_index[start_index] || []).select do |node|
-        node.production.non_terminal == pattern_term && 
+      nodes_by_index = @nodes_by_start_index_and_production_non_terminal[start_index]
+      nodes_by_index_and_non_terminal = nodes_by_index && nodes_by_index[pattern_term]
+      (nodes_by_index_and_non_terminal || []).select do |node|
+        # node.production.non_terminal == pattern_term && 
         node.end_index <= end_index &&
         node != parent_node
       end

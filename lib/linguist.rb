@@ -12,6 +12,12 @@ require 'parsers/practical_earley'
 
 module Linguist
   Production = Struct.new(:non_terminal, :pattern)
+  class Production
+    # since we only create Production objects in one place, and they never change, we can memoize the Production's hash value
+    def hash
+      @hash ||= super
+    end
+  end
 
   # Grammar is a data structure that represents a context-free grammar (CFG).
   #
