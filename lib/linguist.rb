@@ -56,7 +56,7 @@ module Linguist
       @dot_productions = production(@dot, @alphabet)
     end
     
-    # returns an Array of Productions that have the given non_terminal
+    # returns an Array of Productions that are derived from the given non_terminal
     def alternatives(non_terminal)
       productions[non_terminal] || []
     end
